@@ -2,6 +2,7 @@ const { Product, User, Category } = require('../models');
 const { Op } = require('sequelize');
 const sequelize = require('sequelize');
 const Sequelize = require('sequelize');
+const logger = require('../config/logger');
 
 // Debug için
 console.log('Product Model:', Product);
@@ -73,40 +74,23 @@ const productController = {
 
     createProduct: async (req, res) => {
         try {
-            console.log('Request body:', req.body);
-
-            // Ürün verilerini hazırla
-            const productData = {
-                name: req.body.name,
-                sku: req.body.sku,
-                price: req.body.price,
-                quantity: req.body.quantity || 0,
-                description: req.body.description,
-                location: req.body.location,
-                createdBy: 1,
-                updatedBy: 1
-            };
-
-            console.log('Product Data:', productData);
-
-            // Ürünü oluştur
-            const product = await Product.create(productData);
-            console.log('Created Product:', product);
-
-            // İlişkili verileri de getir
-            const productWithRelations = await Product.findByPk(product.id, {
-                include: [
-                    { model: User, as: 'creator', attributes: ['username', 'email'] },
-                    { model: User, as: 'updater', attributes: ['username', 'email'] }
-                ]
+            const product = await Product.create(req.body);
+            
+            logger.info('Product created', {
+                productId: product.id,
+                userId: req.user.id,
+                action: 'create_product'
             });
 
             res.status(201).json({
                 success: true,
-                data: productWithRelations
+                data: product
             });
         } catch (error) {
-            console.error('Product creation error:', error);
+            logger.error('Product creation failed', {
+                error: error.message,
+                userId: req.user.id
+            });
             res.status(400).json({
                 success: false,
                 message: error.message

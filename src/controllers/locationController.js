@@ -1,5 +1,6 @@
 const Location = require('../models/location');
 const Product = require('../models/product');
+const logger = require('../config/logger');
 
 const locationController = {
     // Tüm lokasyonları getir
@@ -117,6 +118,49 @@ const locationController = {
             });
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // Yeni lokasyon oluşturma
+    createLocation: async (req, res) => {
+        try {
+            const locationData = {
+                code: req.body.code,
+                section: req.body.section,
+                row: req.body.row,
+                level: req.body.level,
+                position: req.body.position,
+                capacity: req.body.capacity,
+                coordinates: req.body.coordinates || {
+                    x: req.body.row - 1,
+                    y: req.body.level - 1,
+                    z: req.body.position - 1
+                },
+                occupied: 0,
+                status: 'empty'
+            };
+
+            const location = await Location.create(locationData);
+
+            logger.info('Location created', {
+                locationId: location.id,
+                userId: req.user?.id,
+                action: 'create_location'
+            });
+
+            res.status(201).json({
+                success: true,
+                data: location
+            });
+        } catch (error) {
+            logger.error('Location creation failed', {
+                error: error.message,
+                userId: req.user?.id
+            });
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     }
 };

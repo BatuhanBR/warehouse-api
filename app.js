@@ -8,6 +8,7 @@ const errorHandler = require('./src/middleware/errorHandler');
 const morgan = require('morgan');
 const logger = require('./src/config/logger');
 const logActivity = require('./src/middleware/activityLogger');
+require('./src/jobs/stockAlertJob');  // Cron job'ı başlat
 
 const app = express();
 
@@ -43,6 +44,7 @@ const stockAlertRoutes = require('./src/routes/stockAlertRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const locationRoutes = require('./src/routes/locationRoutes');
 const importExportRoutes = require('./src/routes/importExportRoutes');
+const testRoutes = require('./src/routes/testRoutes');
 
 // Ana route
 app.get('/', (req, res) => {
@@ -60,6 +62,7 @@ app.use('/api/stock-alerts', stockAlertRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/import-export', importExportRoutes);
+app.use('/api/test', testRoutes);
 
 // Error handler
 app.use(errorHandler);

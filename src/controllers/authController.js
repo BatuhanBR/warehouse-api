@@ -60,17 +60,9 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
-
-        // Kullanıcıyı bul
-        const user = await User.findOne({
-            where: { email },
-            include: [{
-                model: Role,
-                as: 'userRole',
-                attributes: ['name', 'permissions']
-            }]
-        });
-
+        
+        // Email kontrolü
+        const user = await User.findOne({ where: { email } });
         if (!user) {
             return res.status(401).json({
                 success: false,
@@ -78,9 +70,9 @@ exports.login = async (req, res) => {
             });
         }
 
-        // Şifreyi kontrol et
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
+        // Şifre kontrolü
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
             return res.status(401).json({
                 success: false,
                 message: 'Geçersiz email veya şifre'
@@ -89,25 +81,22 @@ exports.login = async (req, res) => {
 
         // Token oluştur
         const token = jwt.sign(
-            { 
-                id: user.id, 
-                role: user.userRole.name,
-                permissions: user.userRole.permissions 
-            },
+            { id: user.id, role: user.roleId },
             process.env.JWT_SECRET,
             { expiresIn: '1d' }
         );
 
+        // Token'ı doğru formatta döndürelim
         res.json({
             success: true,
             data: {
+                token,
                 user: {
                     id: user.id,
                     username: user.username,
                     email: user.email,
-                    role: user.userRole.name
-                },
-                token
+                    roleId: user.roleId
+                }
             }
         });
     } catch (error) {

@@ -1,35 +1,33 @@
 const jwt = require('jsonwebtoken');
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
     try {
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1];
-
-        if (!token) {
+        // Token'ı header'dan al
+        const authHeader = req.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
                 message: 'Access token not found'
             });
         }
 
-        jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-            if (err) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Invalid token'
-                });
-            }
-            req.user = user;
-            next();
-        });
+        // "Bearer " kısmını çıkar
+        const token = authHeader.split(' ')[1];
+
+        // Token'ı doğrula
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // User bilgisini request'e ekle
+        req.user = decoded;
+        
+        next();
     } catch (error) {
-        res.status(500).json({
+        res.status(401).json({
             success: false,
-            message: 'Authentication error'
+            message: 'Invalid token'
         });
     }
 };
 
-module.exports = {
-    protect
-};
+module.exports = { protect };

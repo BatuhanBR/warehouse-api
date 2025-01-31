@@ -11,26 +11,32 @@ const Product = sequelize.define('Product', {
     },
     sku: {
         type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
+        unique: true,
+        allowNull: false
     },
     quantity: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
     price: {
-        type: DataTypes.DECIMAL(10, 2)
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false
     },
-    location: {
-        type: DataTypes.STRING
+    locationCode: {
+        type: DataTypes.STRING,
+        allowNull: true
     },
     minStockLevel: {
         type: DataTypes.INTEGER,
+        allowNull: false,
         defaultValue: 10
     },
     categoryId: {
         type: DataTypes.INTEGER,
-        allowNull: true
+        references: {
+            model: 'Categories',
+            key: 'id'
+        }
     },
     isStockCritical: {
         type: DataTypes.VIRTUAL,
@@ -45,6 +51,21 @@ const Product = sequelize.define('Product', {
     updatedBy: {
         type: DataTypes.INTEGER,
         allowNull: true
+    },
+    locationId: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'Locations',
+            key: 'id'
+        }
+    },
+    position3D: {
+        type: DataTypes.JSONB,
+        defaultValue: {
+            x: 0,
+            y: 0,
+            z: 0
+        }
     }
 });
 
@@ -78,6 +99,11 @@ Product.associate = (models) => {
     Product.hasMany(models.StockMovement, {
         foreignKey: 'productId',
         as: 'stockMovements'
+    });
+
+    Product.belongsTo(models.Location, {
+        foreignKey: 'locationId',
+        as: 'warehouseLocation'
     });
 };
 

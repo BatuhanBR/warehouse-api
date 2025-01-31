@@ -4,6 +4,7 @@ const Product = require('./product');
 const StockMovement = require('./stockMovement');
 const Category = require('./category');
 const Role = require('./role');
+const Location = require('./location');
 const seedDatabase = require('../../migrations/seeders/dummyData');
 
 const models = {
@@ -11,7 +12,8 @@ const models = {
     Product,
     StockMovement,
     Category,
-    Role
+    Role,
+    Location
 };
 
 // İlişkileri tanımla
@@ -19,6 +21,12 @@ Object.keys(models).forEach(modelName => {
     if (models[modelName].associate) {
         models[modelName].associate(models);
     }
+});
+
+// İlişkileri güncelle
+Product.belongsTo(models.Location, {
+    foreignKey: 'locationId',
+    as: 'location'
 });
 
 // Veritabanını senkronize et ve rolleri oluştur

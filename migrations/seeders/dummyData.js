@@ -1,5 +1,7 @@
 const sequelize = require('../../src/config/database');
 const { DataTypes } = require('sequelize');
+const Location = require('../../src/models/location');
+const bcrypt = require('bcryptjs');
 
 const seedDatabase = async () => {
     try {
@@ -28,19 +30,19 @@ const seedDatabase = async () => {
             {
                 username: 'admin',
                 email: 'admin@example.com',
-                password: 'admin123',
+                password: await bcrypt.hash('admin123', 10),
                 roleId: 1
             },
             {
                 username: 'manager',
                 email: 'manager@example.com',
-                password: 'manager123',
+                password: await bcrypt.hash('manager123', 10),
                 roleId: 2
             },
             {
                 username: 'staff',
                 email: 'staff@example.com',
-                password: 'staff123',
+                password: await bcrypt.hash('staff123', 10),
                 roleId: 3
             }
         ]);
@@ -50,7 +52,7 @@ const seedDatabase = async () => {
         // Ürünler için örnek veriler
         const products = [];
         const skuPrefix = ['EL', 'GY', 'EV', 'SP', 'KT', 'KZ', 'OY', 'OF'];
-        const locations = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'];
+        const locationCodes = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'];
 
         for (let i = 0; i < 80; i++) {
             const categoryIndex = Math.floor(i / 10);
@@ -69,7 +71,7 @@ const seedDatabase = async () => {
                 sku: `${skuPrefix[categoryIndex % skuPrefix.length]}${String(i + 1).padStart(4, '0')}`,
                 quantity: randomQuantity,
                 price: randomPrice,
-                location: locations[Math.floor(Math.random() * locations.length)],
+                locationCode: locationCodes[Math.floor(Math.random() * locationCodes.length)],
                 minStockLevel: minStockLevel,
                 categoryId: categories[categoryIndex % categories.length].id,
                 createdBy: users[Math.floor(Math.random() * users.length)].id,
@@ -79,6 +81,61 @@ const seedDatabase = async () => {
 
         const createdProducts = await Product.bulkCreate(products);
         console.log('Ürünler oluşturuldu');
+
+        // Lokasyonları oluştur
+        const warehouseLocations = await Location.bulkCreate([
+            {
+                code: 'A1-1-1',
+                section: 'A',
+                row: 1,
+                level: 1,
+                position: 1,
+                capacity: 100,
+                coordinates: { x: 0, y: 0, z: 0 }
+            },
+            {
+                code: 'A1-1-2',
+                section: 'A',
+                row: 1,
+                level: 1,
+                position: 2,
+                capacity: 100,
+                coordinates: { x: 1, y: 0, z: 0 }
+            },
+            {
+                code: 'A1-2-1',
+                section: 'A',
+                row: 2,
+                level: 1,
+                position: 1,
+                capacity: 100,
+                coordinates: { x: 0, y: 1, z: 0 }
+            },
+            {
+                code: 'A1-2-2',
+                section: 'A',
+                row: 2,
+                level: 1,
+                position: 2,
+                capacity: 100,
+                coordinates: { x: 1, y: 1, z: 0 }
+            }
+        ]);
+
+        console.log('Lokasyonlar oluşturuldu');
+
+        // Ürünlere random lokasyon ata
+        for (const product of createdProducts) {
+            const randomLocation = warehouseLocations[Math.floor(Math.random() * warehouseLocations.length)];
+            await product.update({
+                locationId: randomLocation.id,
+                position3D: {
+                    x: randomLocation.coordinates.x,
+                    y: randomLocation.coordinates.y,
+                    z: randomLocation.coordinates.z
+                }
+            });
+        }
 
         // Stok hareketleri
         const stockMovements = [];

@@ -18,36 +18,31 @@ const User = sequelize.define('User', {
     },
     password: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        set(value) {
+            const salt = bcrypt.genSaltSync(10);
+            const hash = bcrypt.hashSync(value, salt);
+            this.setDataValue('password', hash);
+        }
     },
     roleId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 2,
-        references: {
-            model: 'Roles',
-            key: 'id'
-        }
+        defaultValue: 3
     },
     isActive: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
     }
 }, {
-    hooks: {
-        beforeCreate: async (user) => {
-            if (user.password) {
-                const salt = await bcrypt.genSalt(10);
-                user.password = await bcrypt.hash(user.password, salt);
-            }
-        }
-    }
+    tableName: 'Users',
+    timestamps: true
 });
 
 User.associate = (models) => {
     User.belongsTo(models.Role, {
         foreignKey: 'roleId',
-        as: 'userRole'
+        as: 'role'
     });
 
     User.hasMany(models.Product, {
@@ -58,6 +53,11 @@ User.associate = (models) => {
     User.hasMany(models.Product, {
         foreignKey: 'updatedBy',
         as: 'updatedProducts'
+    });
+
+    User.hasMany(models.StockMovement, {
+        foreignKey: 'createdBy',
+        as: 'stockMovements'
     });
 };
 

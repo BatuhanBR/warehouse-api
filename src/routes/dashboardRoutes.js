@@ -7,6 +7,8 @@ const { protect } = require('../middleware/authMiddleware');
 console.log('Dashboard Controller:', dashboardController);
 
 // Dashboard yetkisi olan roller erişebilir
-router.get('/stats', protect, dashboardController.getDashboardStats);
+router.get('/stats', protect, dashboardController.getStats);
+router.get('/trends', protect, dashboardController.getTrends);
+router.get('/predictions', protect, dashboardController.getPredictions);
 
 module.exports = router;

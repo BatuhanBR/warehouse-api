@@ -1,12 +1,16 @@
+const fs = require('fs');
+const path = require('path');
+const Sequelize = require('sequelize');
 const sequelize = require('../config/database');
+const seedDatabase = require('../../migrations/seeders/dummyData');
 const User = require('./user');
 const Product = require('./product');
 const StockMovement = require('./stockMovement');
 const Category = require('./category');
 const Role = require('./role');
 const Location = require('./location');
-const seedDatabase = require('../../migrations/seeders/dummyData');
 
+// Modelleri yükle
 const models = {
     User,
     Product,
@@ -15,113 +19,63 @@ const models = {
     Role,
     Location
 };
+const modelsPath = path.join(__dirname);
 
-// İlişkileri tanımla
+// Modelleri dinamik olarak yükle
+fs.readdirSync(modelsPath)
+    .filter(file => file.indexOf('.') !== 0 && file !== 'index.js' && file.slice(-3) === '.js')
+    .forEach(file => {
+        const model = require(path.join(modelsPath, file));
+        models[model.name] = model;
+    });
+
+// İlişkileri kur
 Object.keys(models).forEach(modelName => {
     if (models[modelName].associate) {
         models[modelName].associate(models);
     }
 });
 
-// İlişkileri güncelle
-Product.belongsTo(models.Location, {
-    foreignKey: 'locationId',
-    as: 'location'
-});
-
-// Veritabanını senkronize et ve rolleri oluştur
-const initializeDatabase = async () => {
+// Tabloları doğru sırayla oluştur
+async function initializeDatabase() {
     try {
-        // Tüm tabloları oluştur
-        await sequelize.sync({ force: true });
-        console.log('Tablolar oluşturuldu');
+        // Sırayla tabloları oluştur
+        await Role.sync();
+        console.log('Role tablosu güncellendi');
 
-        // Rolleri oluştur
-        await Role.bulkCreate([
-            {
-                name: 'admin',
-                description: 'Sistem yöneticisi',
-                permissions: {
-                    "all": true,
-                    "dashboard": true
-                }
-            },
-            {
-                name: 'manager',
-                description: 'Yönetici',
-                permissions: {
-                    "products": {
-                        "read": true,
-                        "create": true,
-                        "update": true,
-                        "delete": true
-                    },
-                    "categories": {
-                        "read": true,
-                        "create": true,
-                        "update": true,
-                        "delete": true
-                    },
-                    "stock": {
-                        "read": true,
-                        "create": true,
-                        "update": true,
-                        "reports": true
-                    },
-                    "users": {
-                        "read": true,
-                        "create": false,
-                        "update": false,
-                        "delete": false
-                    },
-                    "dashboard": {
-                        "view": true
-                    }
-                }
-            },
-            {
-                name: 'warehouse_staff',
-                description: 'Depo personeli',
-                permissions: {
-                    "products": {
-                        "read": true,
-                        "create": false,
-                        "update": true,
-                        "delete": false
-                    },
-                    "stock": {
-                        "read": true,
-                        "create": true,
-                        "update": true,
-                        "reports": true
-                    },
-                    "dashboard": {
-                        "view": false
-                    }
-                }
-            }
-        ]);
+        await User.sync();
+        console.log('User tablosu güncellendi');
 
-        console.log('Roller başarıyla oluşturuldu');
+        await Category.sync();
+        console.log('Category tablosu güncellendi');
 
-        // Biraz bekleyelim, tabloların tam oluşması için
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await Location.sync();
+        console.log('Location tablosu güncellendi');
 
-        // Dummy data ekle
-        await seedDatabase();
+        await Product.sync();
+        console.log('Product tablosu güncellendi');
 
-        return true;
+        await StockMovement.sync();
+        console.log('StockMovement tablosu güncellendi');
+
+        // Test verilerini kontrol et
+        const roleCount = await Role.count();
+        if (roleCount === 0) {
+            await seedDatabase();
+            console.log('Test verileri eklendi');
+        }
+
+        console.log('Veritabanı başarıyla başlatıldı!');
     } catch (error) {
         console.error('Veritabanı başlatma hatası:', error);
-        return false;
+        throw error;
     }
-};
+}
 
-// Veritabanını başlat
-initializeDatabase();
-
+// Modelleri ve fonksiyonları export et
 module.exports = {
     sequelize,
+    Sequelize,
     ...models,
     initializeDatabase
 };

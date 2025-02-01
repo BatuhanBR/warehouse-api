@@ -71,39 +71,29 @@ const Product = sequelize.define('Product', {
 
 // İlişkileri doğru şekilde tanımlayalım
 Product.associate = (models) => {
-    // Ürünü oluşturan kullanıcı ilişkisi
-    Product.belongsTo(models.User, {
-        foreignKey: {
-            name: 'createdBy',
-            allowNull: true // Geçiş için geçici olarak true
-        },
-        as: 'creator',
-        onDelete: 'SET NULL'
-    });
-    
-    // Ürünü güncelleyen kullanıcı ilişkisi
-    Product.belongsTo(models.User, {
-        foreignKey: {
-            name: 'updatedBy',
-            allowNull: true // Geçiş için geçici olarak true
-        },
-        as: 'updater',
-        onDelete: 'SET NULL'
-    });
-
     Product.belongsTo(models.Category, {
         foreignKey: 'categoryId',
         as: 'category'
     });
 
+    Product.belongsTo(models.Location, {
+        foreignKey: 'locationId',
+        as: 'location'
+    });
+
+    Product.belongsTo(models.User, {
+        foreignKey: 'createdBy',
+        as: 'creator'
+    });
+
+    Product.belongsTo(models.User, {
+        foreignKey: 'updatedBy',
+        as: 'updater'
+    });
+
     Product.hasMany(models.StockMovement, {
         foreignKey: 'productId',
         as: 'stockMovements'
-    });
-
-    Product.belongsTo(models.Location, {
-        foreignKey: 'locationId',
-        as: 'warehouseLocation'
     });
 };
 

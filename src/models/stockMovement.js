@@ -29,4 +29,16 @@ const StockMovement = sequelize.define('StockMovement', {
     timestamps: true
 });
 
+StockMovement.associate = (models) => {
+    StockMovement.belongsTo(models.Product, {
+        foreignKey: 'productId',
+        as: 'Product'
+    });
+
+    StockMovement.belongsTo(models.User, {
+        foreignKey: 'createdBy',
+        as: 'creator'
+    });
+};
+
 module.exports = StockMovement;

@@ -8,6 +8,7 @@ const errorHandler = require('./src/middleware/errorHandler');
 const morgan = require('morgan');
 const logger = require('./src/config/logger');
 const logActivity = require('./src/middleware/activityLogger');
+const { initializeDatabase } = require('./src/models');
 require('./src/jobs/stockAlertJob');  // Cron job'ı başlat
 
 const app = express();
@@ -67,10 +68,15 @@ app.use('/api/test', testRoutes);
 // Error handler
 app.use(errorHandler);
 
-// Sunucuyu başlat
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server ${PORT} portunda çalışıyor`);
+// Veritabanını başlat
+initializeDatabase().then(() => {
+    // Sunucuyu başlat
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server ${PORT} portunda çalışıyor`);
+    });
+}).catch(err => {
+    console.error('Veritabanı başlatma hatası:', err);
 });
 
 module.exports = app;

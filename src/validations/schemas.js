@@ -105,6 +105,9 @@ const schemas = {
         login: Joi.object({
             email: Joi.string().email().required(),
             password: Joi.string().required()
+        }),
+        forgotPassword: Joi.object({
+            email: Joi.string().email().required()
         })
     }
 };

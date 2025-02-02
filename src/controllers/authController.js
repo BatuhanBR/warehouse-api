@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const Role = require('../models/role');
+const emailService = require('../services/emailService');
 
 // Register
 exports.register = async (req, res) => {
@@ -104,6 +105,44 @@ exports.login = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message
+        });
+    }
+};
+
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ where: { email } });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Bu email adresi ile kayıtlı kullanıcı bulunamadı'
+            });
+        }
+
+        // Şifre sıfırlama token'ı oluştur
+        const resetToken = jwt.sign(
+            { id: user.id },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        // Gerçek email gönderimi yerine console'a yazdıralım
+        console.log('Şifre sıfırlama linki:', `http://localhost:3001/reset-password?token=${resetToken}`);
+
+        // Normalde burası email gönderecek
+        // await emailService.sendPasswordResetEmail(user.email, resetToken);
+
+        res.json({
+            success: true,
+            message: 'Şifre sıfırlama bağlantısı gönderildi'
+        });
+    } catch (error) {
+        console.error('Şifre sıfırlama hatası:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Şifre sıfırlama işlemi sırasında bir hata oluştu'
         });
     }
 };

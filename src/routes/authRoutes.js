@@ -14,4 +14,9 @@ router.post('/login',
     authController.login
 );
 
+router.post('/forgot-password',
+  validateRequest(userSchema.forgotPassword),
+  authController.forgotPassword
+);
+
 module.exports = router;

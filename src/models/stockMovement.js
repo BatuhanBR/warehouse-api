@@ -1,44 +1,44 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const { Model } = require('sequelize');
 
-const StockMovement = sequelize.define('StockMovement', {
+module.exports = (sequelize, DataTypes) => {
+  class StockMovement extends Model {
+    static associate(models) {
+      StockMovement.belongsTo(models.Product, { foreignKey: 'productId' });
+      StockMovement.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
+    }
+  }
+
+  StockMovement.init({
+    productId: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
     type: {
-        type: DataTypes.ENUM('IN', 'OUT'),
-        allowNull: false
+      type: DataTypes.ENUM('IN', 'OUT'),
+      allowNull: false
     },
     quantity: {
-        type: DataTypes.INTEGER,
-        allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false
     },
-    reason: {
-        type: DataTypes.STRING
+    description: {
+      type: DataTypes.STRING
     },
-    note: {
-        type: DataTypes.TEXT
+    previousStock: {
+      type: DataTypes.INTEGER
+    },
+    newStock: {
+      type: DataTypes.INTEGER
     },
     createdBy: {
-        type: DataTypes.INTEGER,
-        allowNull: true
-    },
-    productId: {
-        type: DataTypes.INTEGER,
-        allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false
     }
-}, {
-    tableName: 'StockMovements',
-    timestamps: true
-});
+  }, {
+    sequelize,
+    modelName: 'StockMovement',
+    tableName: 'StockMovements'
+  });
 
-StockMovement.associate = (models) => {
-    StockMovement.belongsTo(models.Product, {
-        foreignKey: 'productId',
-        as: 'Product'
-    });
-
-    StockMovement.belongsTo(models.User, {
-        foreignKey: 'createdBy',
-        as: 'creator'
-    });
+  return StockMovement;
 };
-
-module.exports = StockMovement;

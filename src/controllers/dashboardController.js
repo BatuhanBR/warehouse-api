@@ -1,6 +1,5 @@
-const Product = require('../models/product');
-const User = require('../models/user');
-const { Op } = require('sequelize');
+const { Product, StockMovement, Location, Category, User } = require('../models');
+const { Op, Sequelize } = require('sequelize');
 const analyticsService = require('../services/analyticsService');
 
 // Controller fonksiyonlarını bir obje içinde toplayalım
@@ -57,15 +56,47 @@ const dashboardController = {
     // Temel istatistikler
     getStats: async (req, res) => {
         try {
-            const reports = await analyticsService.generateReports();
+            const totalProducts = await Product.count();
+            const lowStock = await Product.count({
+                where: {
+                    quantity: {
+                        [Op.lt]: Sequelize.col('minStockLevel')
+                    }
+                }
+            });
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const dailyMovements = await StockMovement.count({
+                where: {
+                    createdAt: {
+                        [Op.gte]: today
+                    }
+                }
+            });
+
+            const activeLocations = await Location.count({
+                where: {
+                    status: {
+                        [Op.ne]: 'empty'
+                    }
+                }
+            });
+
             res.json({
                 success: true,
-                data: reports
+                data: {
+                    totalProducts,
+                    lowStock,
+                    dailyMovements,
+                    activeLocations
+                }
             });
         } catch (error) {
+            console.error('Dashboard stats error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'İstatistikler alınırken bir hata oluştu'
             });
         }
     },
@@ -73,16 +104,31 @@ const dashboardController = {
     // Trend analizi
     getTrends: async (req, res) => {
         try {
-            const { days } = req.query;
-            const trends = await analyticsService.calculateTrends(parseInt(days) || 30);
+            // Son 7 günlük trend analizi
+            const trends = await StockMovement.findAll({
+                attributes: [
+                    [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('COUNT', '*'), 'count'],
+                    'type'
+                ],
+                where: {
+                    createdAt: {
+                        [Op.gte]: new Date(new Date() - 7 * 24 * 60 * 60 * 1000)
+                    }
+                },
+                group: ['date', 'type'],
+                order: [['date', 'ASC']]
+            });
+
             res.json({
                 success: true,
                 data: trends
             });
         } catch (error) {
+            console.error('Trend analysis error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Trend analizi alınırken bir hata oluştu'
             });
         }
     },
@@ -90,15 +136,61 @@ const dashboardController = {
     // Stok tahminleri
     getPredictions: async (req, res) => {
         try {
-            const predictions = await analyticsService.predictStockNeeds();
+            // Basit stok tahminleri
+            const predictions = await Product.findAll({
+                where: {
+                    quantity: {
+                        [Op.lt]: Sequelize.col('minStockLevel')
+                    }
+                },
+                include: [
+                    {
+                        model: Category,
+                        attributes: ['name']
+                    }
+                ]
+            });
+
             res.json({
                 success: true,
                 data: predictions
             });
         } catch (error) {
+            console.error('Predictions error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Tahminler alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getRecentMovements: async (req, res) => {
+        try {
+            const movements = await StockMovement.findAll({
+                include: [
+                    {
+                        model: Product,
+                        attributes: ['name', 'sku']
+                    },
+                    {
+                        model: User,
+                        as: 'creator',
+                        attributes: ['username']
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: 10
+            });
+
+            res.json({
+                success: true,
+                data: movements
+            });
+        } catch (error) {
+            console.error('Recent movements error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Son hareketler alınırken bir hata oluştu'
             });
         }
     }

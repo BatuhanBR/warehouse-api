@@ -1,90 +1,26 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const { Model } = require('sequelize');
 
-const Role = sequelize.define('Role', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
-    },
+module.exports = (sequelize, DataTypes) => {
+  class Role extends Model {
+    static associate(models) {
+      Role.hasMany(models.User, { foreignKey: 'roleId' });
+    }
+  }
+
+  Role.init({
     name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-        validate: {
-            isIn: [['admin', 'manager', 'warehouse_staff']]
-        }
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
     },
     description: {
-        type: DataTypes.TEXT,
-        allowNull: true
-    },
-    permissions: {
-        type: DataTypes.JSON,
-        allowNull: false,
-        defaultValue: {
-            "admin": {
-                "all": true,
-                "dashboard": true  // Dashboard yetkisi ekledik
-            },
-            "manager": {
-                "products": {
-                    "read": true,
-                    "create": true,
-                    "update": true,
-                    "delete": true
-                },
-                "categories": {
-                    "read": true,
-                    "create": true,
-                    "update": true,
-                    "delete": true
-                },
-                "stock": {
-                    "read": true,
-                    "create": true,
-                    "update": true,
-                    "reports": true
-                },
-                "users": {
-                    "read": true,
-                    "create": false,
-                    "update": false,
-                    "delete": false
-                },
-                "dashboard": {  // Manager için dashboard yetkisi
-                    "view": true
-                }
-            },
-            "warehouse_staff": {
-                "products": {
-                    "read": true,
-                    "create": false,
-                    "update": true,
-                    "delete": false
-                },
-                "stock": {
-                    "read": true,
-                    "create": true,
-                    "update": true,
-                    "reports": true
-                },
-                "dashboard": {  // Depo personeli için sınırlı dashboard yetkisi
-                    "view": false
-                }
-            }
-        }
+      type: DataTypes.STRING
     }
-}, {
-    tableName: 'Roles',
-    timestamps: true
-});
+  }, {
+    sequelize,
+    modelName: 'Role',
+    tableName: 'Roles'
+  });
 
-Role.associate = (models) => {
-    Role.hasMany(models.User, {
-        foreignKey: 'roleId',
-        as: 'users'
-    });
+  return Role;
 };
-
-module.exports = Role;

@@ -1,56 +1,54 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const { Model } = require('sequelize');
 
-const Location = sequelize.define('Location', {
+module.exports = (sequelize, DataTypes) => {
+  class Location extends Model {
+    static associate(models) {
+      Location.hasMany(models.Product, { foreignKey: 'locationId' });
+    }
+  }
+
+  Location.init({
     code: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
     },
-    section: {  // A, B, C...
-        type: DataTypes.STRING,
-        allowNull: false
+    section: {
+      type: DataTypes.STRING,
+      allowNull: false
     },
-    row: {      // 1, 2, 3...
-        type: DataTypes.INTEGER,
-        allowNull: false
+    row: {
+      type: DataTypes.INTEGER,
+      allowNull: false
     },
-    level: {    // 1, 2, 3... (yükseklik)
-        type: DataTypes.INTEGER,
-        allowNull: false
+    level: {
+      type: DataTypes.INTEGER,
+      allowNull: false
     },
-    position: { // 1, 2, 3... (derinlik)
-        type: DataTypes.INTEGER,
-        allowNull: false
+    position: {
+      type: DataTypes.INTEGER,
+      allowNull: false
     },
     capacity: {
-        type: DataTypes.INTEGER,
-        allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false
     },
     occupied: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
+      type: DataTypes.INTEGER,
+      defaultValue: 0
     },
     status: {
-        type: DataTypes.ENUM('empty', 'partial', 'full'),
-        defaultValue: 'empty'
+      type: DataTypes.ENUM('empty', 'partial', 'full'),
+      defaultValue: 'empty'
     },
     coordinates: {
-        type: DataTypes.JSONB,
-        allowNull: false,
-        defaultValue: {
-            x: 0,
-            y: 0,
-            z: 0
-        }
+      type: DataTypes.JSON
     }
-});
+  }, {
+    sequelize,
+    modelName: 'Location',
+    tableName: 'Locations'
+  });
 
-Location.associate = (models) => {
-    Location.hasMany(models.Product, {
-        foreignKey: 'locationId',
-        as: 'products'
-    });
-};
-
-module.exports = Location; 
+  return Location;
+}; 

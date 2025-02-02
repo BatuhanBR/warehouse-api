@@ -9,13 +9,14 @@ const morgan = require('morgan');
 const logger = require('./src/config/logger');
 const logActivity = require('./src/middleware/activityLogger');
 const { initializeDatabase } = require('./src/models');
-require('./src/jobs/stockAlertJob');  // Cron job'ı başlat
+require('./src/jobs/stockAlertJob');  // Cron job'ları başlat
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Security middleware
 app.use(helmet());
@@ -46,6 +47,7 @@ const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const locationRoutes = require('./src/routes/locationRoutes');
 const importExportRoutes = require('./src/routes/importExportRoutes');
 const testRoutes = require('./src/routes/testRoutes');
+const stockMovementRoutes = require('./src/routes/stockMovementRoutes');
 
 // Ana route
 app.get('/', (req, res) => {
@@ -54,29 +56,37 @@ app.get('/', (req, res) => {
 
 // Route'ları kullan
 app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/stock', stockRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/roles', roleRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/stock-movements', stockMovementRoutes);
+app.use('/api/stock', stockRoutes);
 app.use('/api/stock-alerts', stockAlertRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/locations', locationRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/test', testRoutes);
 
 // Error handler
-app.use(errorHandler);
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({
+        success: false,
+        message: 'Bir hata oluştu'
+    });
+});
 
-// Veritabanını başlat
-initializeDatabase().then(() => {
+// Veritabanı bağlantısı ve sunucuyu başlat
+db.sequelize.sync().then(() => {
     // Sunucuyu başlat
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-        console.log(`Server ${PORT} portunda çalışıyor`);
+        logger.info(`Server ${PORT} portunda çalışıyor`);
+        logger.info('Email sistemi aktif');
+        logger.info('Cron job\'lar başlatıldı');
     });
 }).catch(err => {
-    console.error('Veritabanı başlatma hatası:', err);
+    logger.error('Veritabanı bağlantı hatası:', err);
 });
 
 module.exports = app;

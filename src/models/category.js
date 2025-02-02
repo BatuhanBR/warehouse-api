@@ -1,42 +1,26 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const { Model } = require('sequelize');
 
-const Category = sequelize.define('Category', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
-    },
+module.exports = (sequelize, DataTypes) => {
+  class Category extends Model {
+    static associate(models) {
+      Category.hasMany(models.Product, { foreignKey: 'categoryId' });
+    }
+  }
+
+  Category.init({
     name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
     },
     description: {
-        type: DataTypes.TEXT,
-        allowNull: true
-    },
-    isActive: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    createdBy: {
-        type: DataTypes.INTEGER,
-        references: {
-            model: 'Users',
-            key: 'id'
-        }
-    },
-    updatedBy: {
-        type: DataTypes.INTEGER,
-        references: {
-            model: 'Users',
-            key: 'id'
-        }
+      type: DataTypes.STRING
     }
-}, {
-    tableName: 'Categories',
-    timestamps: true
-});
+  }, {
+    sequelize,
+    modelName: 'Category',
+    tableName: 'Categories'
+  });
 
-module.exports = Category;
+  return Category;
+};

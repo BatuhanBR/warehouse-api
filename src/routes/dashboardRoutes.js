@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const dashboardController = require('../controllers/dashboardController');
-const { protect } = require('../middleware/authMiddleware');
+const auth = require('../middleware/auth');
 
-// Önce controller'ın doğru yüklendiğinden emin olalım
-console.log('Dashboard Controller:', dashboardController);
+// Debug log'unu kaldıralım
+// console.log('Dashboard Controller:', dashboardController);
 
-// Dashboard yetkisi olan roller erişebilir
-router.get('/stats', protect, dashboardController.getStats);
-router.get('/trends', protect, dashboardController.getTrends);
-router.get('/predictions', protect, dashboardController.getPredictions);
+// Route'ları tanımlayalım
+router.get('/stats', auth, (req, res) => dashboardController.getStats(req, res));
+router.get('/trends', auth, (req, res) => dashboardController.getTrends(req, res));
+router.get('/predictions', auth, (req, res) => dashboardController.getPredictions(req, res));
+router.get('/recent-movements', auth, (req, res) => dashboardController.getRecentMovements(req, res));
 
 module.exports = router;

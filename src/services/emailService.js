@@ -110,6 +110,41 @@ const emailService = {
             });
             throw error;
         }
+    },
+
+    sendStockAlert: async (products) => {
+        try {
+            const mailOptions = {
+                from: process.env.SMTP_FROM,
+                to: process.env.ALERT_EMAIL,
+                subject: 'Düşük Stok Uyarısı',
+                html: `
+                    <h2>Düşük Stok Seviyesindeki Ürünler</h2>
+                    <table>
+                        <tr>
+                            <th>Ürün</th>
+                            <th>SKU</th>
+                            <th>Mevcut Stok</th>
+                            <th>Minimum Stok</th>
+                        </tr>
+                        ${products.map(p => `
+                            <tr>
+                                <td>${p.name}</td>
+                                <td>${p.sku}</td>
+                                <td>${p.quantity}</td>
+                                <td>${p.minStockLevel}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `
+            };
+
+            await transporter.sendMail(mailOptions);
+            logger.info('Stok uyarı e-postası gönderildi');
+        } catch (error) {
+            logger.error('Email gönderme hatası:', error);
+            throw error;
+        }
     }
 };
 

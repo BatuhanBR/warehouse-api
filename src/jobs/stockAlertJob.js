@@ -1,39 +1,31 @@
 const cron = require('node-cron');
-const Product = require('../models/product');
+const { Product } = require('../models');
+const { Op } = require('sequelize');
 const emailService = require('../services/emailService');
 const logger = require('../config/logger');
+const { Sequelize } = require('sequelize');
 
 // Her gün saat 09:00'da çalışacak
 cron.schedule('0 9 * * *', async () => {
     try {
-        // Kritik stok seviyesindeki ürünleri bul
-        const criticalProducts = await Product.findAll({
-            where: sequelize.literal('quantity <= minStockLevel')
+        logger.info('Stok kontrol job\'ı başladı');
+        
+        const lowStockProducts = await Product.findAll({
+            where: {
+                quantity: {
+                    [Op.lt]: Sequelize.col('minStockLevel')
+                }
+            }
         });
 
-        // Günlük rapor verilerini hazırla
-        const allProducts = await Product.findAll();
-        const report = {
-            totalProducts: allProducts.length,
-            criticalStock: criticalProducts.length,
-            totalValue: allProducts.reduce((sum, p) => sum + (p.price * p.quantity), 0),
-            criticalItems: criticalProducts
-        };
-
-        // Günlük raporu gönder
-        await emailService.sendDailyReport(report);
-
-        // Kritik ürünler için ayrı uyarılar gönder
-        for (const product of criticalProducts) {
-            await emailService.sendLowStockAlert(product);
+        if (lowStockProducts.length > 0) {
+            // Email gönder
+            await emailService.sendStockAlert(lowStockProducts);
+            logger.info(`${lowStockProducts.length} ürün için stok uyarısı gönderildi`);
         }
 
-        logger.info('Stock alert job completed', {
-            criticalProducts: criticalProducts.length
-        });
+        logger.info('Stok kontrol job\'ı tamamlandı');
     } catch (error) {
-        logger.error('Stock alert job failed', {
-            error: error.message
-        });
+        logger.error('Stok kontrol job hatası:', error);
     }
 }); 

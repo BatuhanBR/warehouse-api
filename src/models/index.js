@@ -1,81 +1,43 @@
 const fs = require('fs');
 const path = require('path');
 const Sequelize = require('sequelize');
-const sequelize = require('../config/database');
-const seedDatabase = require('../../migrations/seeders/dummyData');
-const User = require('./user');
-const Product = require('./product');
-const StockMovement = require('./stockMovement');
-const Category = require('./category');
-const Role = require('./role');
-const Location = require('./location');
+const config = require('../config/config.js')[process.env.NODE_ENV || 'development'];
+// const dummyData = require('../../migrations/seeders/dummyData');
 
-// Modelleri yükle
-const models = {
-    User,
-    Product,
-    StockMovement,
-    Category,
-    Role,
-    Location
-};
-const modelsPath = path.join(__dirname);
+const db = {};
 
-// Modelleri dinamik olarak yükle
-fs.readdirSync(modelsPath)
-    .filter(file => file.indexOf('.') !== 0 && file !== 'index.js' && file.slice(-3) === '.js')
-    .forEach(file => {
-        const model = require(path.join(modelsPath, file));
-        models[model.name] = model;
-    });
+const sequelize = new Sequelize(
+  config.database,
+  config.username,
+  config.password,
+  {
+    ...config,
+    logging: false
+  }
+);
+
+// Model dosyalarını otomatik yükle
+fs.readdirSync(__dirname)
+  .filter(file => {
+    return (
+      file.indexOf('.') !== 0 &&
+      file !== 'index.js' &&
+      file.slice(-3) === '.js'
+    );
+  })
+  .forEach(file => {
+    const model = require(path.join(__dirname, file))(sequelize, Sequelize.DataTypes);
+    db[model.name] = model;
+  });
 
 // İlişkileri kur
-Object.keys(models).forEach(modelName => {
-    if (models[modelName].associate) {
-        models[modelName].associate(models);
-    }
+Object.keys(db).forEach(modelName => {
+  if (db[modelName].associate) {
+    db[modelName].associate(db);
+  }
 });
 
-// Tabloları doğru sırayla oluştur
-async function initializeDatabase() {
-    try {
-        // Sırayla tabloları oluştur
-        await Role.sync();
-        console.log('Role tablosu güncellendi');
+db.sequelize = sequelize;
+db.Sequelize = Sequelize;
 
-        await User.sync();
-        console.log('User tablosu güncellendi');
-
-        await Category.sync();
-        console.log('Category tablosu güncellendi');
-
-        await Location.sync();
-        console.log('Location tablosu güncellendi');
-
-        await Product.sync();
-        console.log('Product tablosu güncellendi');
-
-        await StockMovement.sync();
-        console.log('StockMovement tablosu güncellendi');
-
-        // Test verilerini kontrol et
-        const roleCount = await Role.count();
-        if (roleCount === 0) {
-            await seedDatabase();
-            console.log('Test verileri eklendi');
-        }
-
-        console.log('Veritabanı başarıyla başlatıldı!');
-    } catch (error) {
-        console.error('Veritabanı başlatma hatası:', error);
-        throw error;
-    }
-}
-
-// Modelleri ve fonksiyonları export et
-module.exports = {
-    sequelize,
-    Sequelize,
-    ...models,
-    initializeDatabase
-};
+module.exports = db;

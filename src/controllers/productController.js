@@ -345,6 +345,11 @@ const productController = {
                 message: error.message
             });
         }
+    },
+
+    bulkUpdateProducts: async (req, res) => {
+        const { products } = req.body;
+        // Toplu güncelleme işlemi
     }
 };
 

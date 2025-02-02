@@ -395,3 +395,8 @@ exports.getStockSummary = async (req, res) => {
         });
     }
 };
+
+const reserveStock = async (req, res) => {
+    const { productId, quantity, duration } = req.body;
+    // Stok rezervasyon işlemi
+};

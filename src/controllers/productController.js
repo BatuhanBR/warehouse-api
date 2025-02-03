@@ -1,7 +1,5 @@
-const { Product, User, Category } = require('../models');
-const { Op } = require('sequelize');
-const sequelize = require('sequelize');
-const Sequelize = require('sequelize');
+const { Product, Category, User } = require('../models');
+const { Op, Sequelize } = require('sequelize');
 const logger = require('../config/logger');
 
 // Debug için
@@ -11,24 +9,54 @@ console.log('User Model:', User);
 const productController = {
     getProducts: async (req, res) => {
         try {
+            const { search, category, status } = req.query;
+            
+            let where = {};
+            
+            // Arama filtresi
+            if (search) {
+                where = {
+                    [Op.or]: [
+                        { name: { [Op.iLike]: `%${search}%` } },
+                        { sku: { [Op.iLike]: `%${search}%` } }
+                    ]
+                };
+            }
+            
+            // Kategori filtresi
+            if (category) {
+                where.categoryId = category;
+            }
+            
+            // Stok durumu filtresi
+            if (status === 'low-stock') {
+                where = {
+                    ...where,
+                    quantity: {
+                        [Op.lte]: Sequelize.col('minStockLevel')
+                    }
+                };
+            } else if (status === 'out-of-stock') {
+                where = {
+                    ...where,
+                    quantity: 0
+                };
+            }
+
             const products = await Product.findAll({
+                where,
                 include: [
+                    {
+                        model: Category,
+                        attributes: ['id', 'name']
+                    },
                     {
                         model: User,
                         as: 'creator',
-                        attributes: ['id', 'email']
-                    },
-                    {
-                        model: User,
-                        as: 'updater',
-                        attributes: ['id', 'email']
-                    },
-                    {
-                        model: Category,
-                        as: 'category',
-                        attributes: ['id', 'name']
+                        attributes: ['id', 'username']
                     }
-                ]
+                ],
+                order: [['createdAt', 'DESC']]
             });
 
             res.json({
@@ -36,10 +64,10 @@ const productController = {
                 data: products
             });
         } catch (error) {
-            console.error('Get products error:', error);
+            logger.error('Get products error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Ürünler listelenirken bir hata oluştu'
             });
         }
     },
@@ -74,7 +102,13 @@ const productController = {
 
     createProduct: async (req, res) => {
         try {
-            const product = await Product.create(req.body);
+            const userId = req.user.id;
+            const productData = {
+                ...req.body,
+                createdBy: userId
+            };
+
+            const product = await Product.create(productData);
             
             logger.info('Product created', {
                 productId: product.id,
@@ -84,24 +118,24 @@ const productController = {
 
             res.status(201).json({
                 success: true,
+                message: 'Ürün başarıyla oluşturuldu',
                 data: product
             });
         } catch (error) {
-            logger.error('Product creation failed', {
-                error: error.message,
-                userId: req.user.id
-            });
-            res.status(400).json({
+            logger.error('Create product error:', error);
+            res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Ürün oluşturulurken bir hata oluştu'
             });
         }
     },
 
     updateProduct: async (req, res) => {
         try {
-            const product = await Product.findByPk(req.params.id);
+            const { id } = req.params;
+            const userId = req.user.id;
             
+            const product = await Product.findByPk(id);
             if (!product) {
                 return res.status(404).json({
                     success: false,
@@ -109,36 +143,36 @@ const productController = {
                 });
             }
 
-            // Ürünü güncelle
-            await product.update({
+            const updatedProduct = await product.update({
                 ...req.body,
-                updatedBy: 1 // Şimdilik sabit değer
+                updatedBy: userId
             });
 
-            // Güncellenmiş ürünü ilişkileriyle birlikte getir
-            const updatedProduct = await Product.findByPk(product.id, {
-                include: [
-                    { model: User, as: 'creator', attributes: ['username', 'email'] },
-                    { model: User, as: 'updater', attributes: ['username', 'email'] }
-                ]
+            logger.info('Product updated', {
+                productId: id,
+                userId: userId,
+                action: 'update_product'
             });
 
             res.json({
                 success: true,
+                message: 'Ürün başarıyla güncellendi',
                 data: updatedProduct
             });
         } catch (error) {
-            res.status(400).json({
+            logger.error('Update product error:', error);
+            res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Ürün güncellenirken bir hata oluştu'
             });
         }
     },
 
     deleteProduct: async (req, res) => {
         try {
-            const product = await Product.findByPk(req.params.id);
+            const { id } = req.params;
             
+            const product = await Product.findByPk(id);
             if (!product) {
                 return res.status(404).json({
                     success: false,
@@ -148,14 +182,21 @@ const productController = {
 
             await product.destroy();
 
+            logger.info('Product deleted', {
+                productId: id,
+                userId: req.user.id,
+                action: 'delete_product'
+            });
+
             res.json({
                 success: true,
                 message: 'Ürün başarıyla silindi'
             });
         } catch (error) {
+            logger.error('Delete product error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Ürün silinirken bir hata oluştu'
             });
         }
     },
@@ -246,7 +287,7 @@ const productController = {
                     'createdAt',
                     'updatedAt',
                     [
-                        sequelize.literal('CASE WHEN quantity = 0 THEN \'Stokta Yok\' WHEN quantity < 5 THEN \'Kritik\' ELSE \'Az\' END'),
+                        Sequelize.literal('CASE WHEN quantity = 0 THEN \'Stokta Yok\' WHEN quantity < 5 THEN \'Kritik\' ELSE \'Az\' END'),
                         'stockStatus'
                     ]
                 ],

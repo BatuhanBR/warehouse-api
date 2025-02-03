@@ -1,99 +1,82 @@
 const { Product, StockMovement, Location, Category, User } = require('../models');
 const { Op, Sequelize } = require('sequelize');
-const analyticsService = require('../services/analyticsService');
+const logger = require('../config/logger');
 
-// Controller fonksiyonlarını bir obje içinde toplayalım
 const dashboardController = {
     getDashboardStats: async (req, res) => {
         try {
-            // Toplam ürün sayısı
-            const totalProducts = await Product.count();
-            
-            // Stok sayısı düşük olan ürünler (örneğin 10'dan az)
-            const lowStockProducts = await Product.count({
-                where: {
-                    quantity: {
-                        [Op.lt]: 10
+            const [
+                totalProducts,
+                lowStockProducts,
+                recentProducts,
+                recentMovements,
+                activeLocations,
+                categoryDistribution
+            ] = await Promise.all([
+                // Toplam ürün sayısı
+                Product.count(),
+                
+                // Düşük stoklu ürünler
+                Product.count({
+                    where: {
+                        quantity: {
+                            [Op.lte]: Sequelize.col('minStockLevel')
+                        }
                     }
-                }
-            });
-
-            // Son eklenen ürünler (son 5)
-            const recentProducts = await Product.findAll({
-                limit: 5,
-                order: [['createdAt', 'DESC']],
-                include: [
-                    {
-                        model: User,
-                        as: 'creator',
-                        attributes: ['username']
-                    },
-                    {
-                        model: User,
-                        as: 'updater',
-                        attributes: ['username']
-                    }
-                ]
-            });
+                }),
+                
+                // Son eklenen ürünler
+                Product.findAll({
+                    attributes: ['id', 'name', 'sku', 'quantity', 'price'],
+                    limit: 5,
+                    order: [['createdAt', 'DESC']],
+                    include: [{
+                        model: Category,
+                        attributes: ['name']
+                    }]
+                }),
+                
+                // Son hareketler
+                StockMovement.findAll({
+                    attributes: ['id', 'type', 'quantity', 'createdAt'],
+                    limit: 10,
+                    order: [['createdAt', 'DESC']],
+                    include: [{
+                        model: Product,
+                        attributes: ['name', 'sku']
+                    }]
+                }),
+                
+                // Aktif lokasyonlar (geçici olarak tüm lokasyonları sayalım)
+                Location.count(),
+                
+                // Kategori dağılımı
+                Product.findAll({
+                    attributes: [
+                        [Sequelize.fn('COUNT', Sequelize.col('Product.id')), 'count']
+                    ],
+                    include: [{
+                        model: Category,
+                        attributes: ['name']
+                    }],
+                    group: ['Category.id', 'Category.name']
+                })
+            ]);
 
             res.json({
                 success: true,
                 data: {
                     totalProducts,
                     lowStockProducts,
-                    recentProducts
+                    recentProducts,
+                    recentMovements,
+                    activeLocations,
+                    categoryDistribution
                 }
             });
+
         } catch (error) {
-            console.error('Dashboard stats error:', error);
-            res.status(500).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    // Temel istatistikler
-    getStats: async (req, res) => {
-        try {
-            const totalProducts = await Product.count();
-            const lowStock = await Product.count({
-                where: {
-                    quantity: {
-                        [Op.lt]: Sequelize.col('minStockLevel')
-                    }
-                }
-            });
-
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const dailyMovements = await StockMovement.count({
-                where: {
-                    createdAt: {
-                        [Op.gte]: today
-                    }
-                }
-            });
-
-            const activeLocations = await Location.count({
-                where: {
-                    status: {
-                        [Op.ne]: 'empty'
-                    }
-                }
-            });
-
-            res.json({
-                success: true,
-                data: {
-                    totalProducts,
-                    lowStock,
-                    dailyMovements,
-                    activeLocations
-                }
-            });
-        } catch (error) {
-            console.error('Dashboard stats error:', error);
+            logger.error('Dashboard stats error:', error);
             res.status(500).json({
                 success: false,
                 message: 'İstatistikler alınırken bir hata oluştu'
@@ -101,23 +84,24 @@ const dashboardController = {
         }
     },
 
-    // Trend analizi
-    getTrends: async (req, res) => {
+    getStockTrends: async (req, res) => {
         try {
-            // Son 7 günlük trend analizi
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
             const trends = await StockMovement.findAll({
                 attributes: [
                     [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date'],
-                    [Sequelize.fn('COUNT', '*'), 'count'],
-                    'type'
+                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'IN' THEN quantity ELSE 0 END")), 'inbound'],
+                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'OUT' THEN quantity ELSE 0 END")), 'outbound']
                 ],
                 where: {
                     createdAt: {
-                        [Op.gte]: new Date(new Date() - 7 * 24 * 60 * 60 * 1000)
+                        [Op.gte]: thirtyDaysAgo
                     }
                 },
-                group: ['date', 'type'],
-                order: [['date', 'ASC']]
+                group: [Sequelize.fn('DATE', Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('DATE', Sequelize.col('createdAt')), 'ASC']]
             });
 
             res.json({
@@ -125,41 +109,10 @@ const dashboardController = {
                 data: trends
             });
         } catch (error) {
-            console.error('Trend analysis error:', error);
+            console.error('Stock trends error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Trend analizi alınırken bir hata oluştu'
-            });
-        }
-    },
-
-    // Stok tahminleri
-    getPredictions: async (req, res) => {
-        try {
-            // Basit stok tahminleri
-            const predictions = await Product.findAll({
-                where: {
-                    quantity: {
-                        [Op.lt]: Sequelize.col('minStockLevel')
-                    }
-                },
-                include: [
-                    {
-                        model: Category,
-                        attributes: ['name']
-                    }
-                ]
-            });
-
-            res.json({
-                success: true,
-                data: predictions
-            });
-        } catch (error) {
-            console.error('Predictions error:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Tahminler alınırken bir hata oluştu'
+                message: 'Stok trendleri alınırken bir hata oluştu'
             });
         }
     },
@@ -167,6 +120,8 @@ const dashboardController = {
     getRecentMovements: async (req, res) => {
         try {
             const movements = await StockMovement.findAll({
+                limit: 10,
+                order: [['createdAt', 'DESC']],
                 include: [
                     {
                         model: Product,
@@ -177,9 +132,7 @@ const dashboardController = {
                         as: 'creator',
                         attributes: ['username']
                     }
-                ],
-                order: [['createdAt', 'DESC']],
-                limit: 10
+                ]
             });
 
             res.json({
@@ -193,8 +146,23 @@ const dashboardController = {
                 message: 'Son hareketler alınırken bir hata oluştu'
             });
         }
+    },
+
+    getStats: async (req, res) => {
+        try {
+            const totalProducts = await Product.countDocuments()
+            const totalUsers = await User.countDocuments()
+            const lowStock = await Product.countDocuments({ stock: { $lt: 10 } })
+
+            res.json({
+                totalProducts,
+                totalUsers,
+                lowStock
+            })
+        } catch (error) {
+            res.status(500).json({ message: 'Sunucu hatası' })
+        }
     }
 };
 
-// Controller'ı export edelim
 module.exports = dashboardController;

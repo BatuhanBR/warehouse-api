@@ -7,9 +7,9 @@ const auth = require('../middleware/auth');
 // console.log('Dashboard Controller:', dashboardController);
 
 // Route'ları tanımlayalım
-router.get('/stats', auth, (req, res) => dashboardController.getStats(req, res));
-router.get('/trends', auth, (req, res) => dashboardController.getTrends(req, res));
+router.get('/stats', auth, dashboardController.getDashboardStats);
+router.get('/trends', auth, dashboardController.getStockTrends);
 router.get('/predictions', auth, (req, res) => dashboardController.getPredictions(req, res));
-router.get('/recent-movements', auth, (req, res) => dashboardController.getRecentMovements(req, res));
+router.get('/recent-movements', auth, dashboardController.getRecentMovements);
 
 module.exports = router;

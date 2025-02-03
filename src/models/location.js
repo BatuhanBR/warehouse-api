@@ -3,15 +3,22 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Location extends Model {
     static associate(models) {
-      Location.hasMany(models.Product, { foreignKey: 'locationId' });
+      Location.hasMany(models.Product, {
+        foreignKey: 'locationId',
+        as: 'products'
+      });
     }
   }
 
   Location.init({
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     code: {
       type: DataTypes.STRING,
-      allowNull: false,
-      unique: true
+      unique: true,
+      allowNull: false
     },
     section: {
       type: DataTypes.STRING,
@@ -43,6 +50,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     coordinates: {
       type: DataTypes.JSON
+    },
+    description: {
+      type: DataTypes.TEXT
     }
   }, {
     sequelize,

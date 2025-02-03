@@ -9,42 +9,13 @@ console.log('User Model:', User);
 const productController = {
     getProducts: async (req, res) => {
         try {
-            const { search, category, status } = req.query;
-            
-            let where = {};
-            
-            // Arama filtresi
-            if (search) {
-                where = {
-                    [Op.or]: [
-                        { name: { [Op.iLike]: `%${search}%` } },
-                        { sku: { [Op.iLike]: `%${search}%` } }
-                    ]
-                };
-            }
-            
-            // Kategori filtresi
-            if (category) {
-                where.categoryId = category;
-            }
-            
-            // Stok durumu filtresi
-            if (status === 'low-stock') {
-                where = {
-                    ...where,
-                    quantity: {
-                        [Op.lte]: Sequelize.col('minStockLevel')
-                    }
-                };
-            } else if (status === 'out-of-stock') {
-                where = {
-                    ...where,
-                    quantity: 0
-                };
-            }
-
             const products = await Product.findAll({
-                where,
+                attributes: [
+                    'id', 'name', 'description', 'sku', 
+                    'quantity', 'price', 'minStockLevel',
+                    'categoryId', 'locationId', 'createdBy',
+                    'position3D', 'createdAt', 'updatedAt'
+                ],
                 include: [
                     {
                         model: Category,
@@ -59,16 +30,10 @@ const productController = {
                 order: [['createdAt', 'DESC']]
             });
 
-            res.json({
-                success: true,
-                data: products
-            });
+            res.json({ success: true, data: products });
         } catch (error) {
-            logger.error('Get products error:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Ürünler listelenirken bir hata oluştu'
-            });
+            console.error('Get products error:', error);
+            res.status(500).json({ success: false, error: 'Internal server error' });
         }
     },
 
@@ -391,6 +356,32 @@ const productController = {
     bulkUpdateProducts: async (req, res) => {
         const { products } = req.body;
         // Toplu güncelleme işlemi
+    },
+
+    // Toplu silme işlemi
+    bulkDeleteProducts: async (req, res) => {
+        try {
+            const { productIds } = req.body;
+            
+            await Product.destroy({
+                where: {
+                    id: {
+                        [Op.in]: productIds
+                    }
+                }
+            });
+
+            res.json({
+                success: true,
+                message: `${productIds.length} ürün başarıyla silindi`
+            });
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Ürünler silinirken bir hata oluştu'
+            });
+        }
     }
 };
 

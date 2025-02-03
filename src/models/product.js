@@ -11,12 +11,18 @@ module.exports = (sequelize, DataTypes) => {
   }
 
   Product.init({
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
     name: {
       type: DataTypes.STRING,
       allowNull: false
     },
     description: {
-      type: DataTypes.TEXT
+      type: DataTypes.TEXT,
+      allowNull: true
     },
     sku: {
       type: DataTypes.STRING,

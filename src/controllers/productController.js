@@ -1,4 +1,4 @@
-const { Product, Category, User } = require('../models');
+const { Product, Category, User, StockMovement, sequelize } = require('../models');
 const { Op, Sequelize } = require('sequelize');
 const logger = require('../config/logger');
 
@@ -40,9 +40,18 @@ const productController = {
     getProductById: async (req, res) => {
         try {
             const product = await Product.findByPk(req.params.id, {
+                attributes: [
+                    'id', 'name', 'description', 'sku', 
+                    'quantity', 'price', 'minStockLevel',
+                    'categoryId', 'locationId', 'position3D', 
+                    'createdBy', 'createdAt', 'updatedAt'
+                ],
                 include: [
-                    { model: User, as: 'creator', attributes: ['username', 'email'] },
-                    { model: User, as: 'updater', attributes: ['username', 'email'] }
+                    { 
+                        model: User, 
+                        as: 'creator', 
+                        attributes: ['username', 'email'] 
+                    }
                 ]
             });
             
@@ -68,29 +77,65 @@ const productController = {
     createProduct: async (req, res) => {
         try {
             const userId = req.user.id;
+            
+            console.log('-------- POSTMAN TEST --------');
+            console.log('Gelen İstek:', {
+                headers: req.headers,
+                body: req.body,
+                user: req.user
+            });
+
             const productData = {
-                ...req.body,
+                name: req.body.name.trim(),
+                sku: req.body.sku.trim(),
+                description: req.body.description || '',
+                quantity: parseInt(req.body.stock) || 0,
+                price: parseFloat(req.body.price) || 0,
+                minStockLevel: parseInt(req.body.minStock) || 0,
+                categoryId: parseInt(req.body.categoryId || req.body.category),
                 createdBy: userId
             };
 
-            const product = await Product.create(productData);
-            
-            logger.info('Product created', {
-                productId: product.id,
-                userId: req.user.id,
-                action: 'create_product'
+            console.log('İşlenmiş Veri:', productData);
+
+            const product = await Product.create(productData, {
+                returning: ['id', 'name', 'description', 'sku', 'quantity', 'price', 
+                            'minStockLevel', 'categoryId', 'locationId', 'position3D', 
+                            'createdBy', 'createdAt', 'updatedAt']
             });
+            console.log('Oluşturulan Ürün:', product.toJSON());
 
             res.status(201).json({
                 success: true,
                 message: 'Ürün başarıyla oluşturuldu',
                 data: product
             });
+
         } catch (error) {
-            logger.error('Create product error:', error);
+            console.error('Ürün Oluşturma Hatası:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                errors: error.errors,
+                fullError: JSON.stringify(error, null, 2)
+            });
+            
+            if (error.name === 'SequelizeValidationError' || 
+                error.name === 'SequelizeUniqueConstraintError') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validasyon hatası',
+                    errors: error.errors.map(err => ({
+                        field: err.path,
+                        message: err.message
+                    }))
+                });
+            }
+
             res.status(500).json({
                 success: false,
-                message: 'Ürün oluşturulurken bir hata oluştu'
+                message: 'Ürün oluşturulurken bir hata oluştu',
+                error: error.message
             });
         }
     },
@@ -100,30 +145,49 @@ const productController = {
             const { id } = req.params;
             const userId = req.user.id;
             
-            const product = await Product.findByPk(id);
-            if (!product) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Ürün bulunamadı'
+            // Transaction başlat
+            const transaction = await sequelize.transaction();
+
+            try {
+                const product = await Product.findByPk(id, {
+                    attributes: [
+                        'id', 'name', 'description', 'sku', 
+                        'quantity', 'price', 'minStockLevel',
+                        'categoryId', 'locationId', 'position3D', 
+                        'createdBy', 'createdAt', 'updatedAt'
+                    ],
+                    transaction
                 });
+
+                if (!product) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Ürün bulunamadı'
+                    });
+                }
+
+                // updatedBy'ı kaldırdık
+                const updatedProduct = await product.update(req.body, { transaction });
+
+                // Transaction'ı onayla
+                await transaction.commit();
+
+                logger.info('Product updated', {
+                    productId: id,
+                    userId: userId,
+                    action: 'update_product'
+                });
+
+                res.json({
+                    success: true,
+                    message: 'Ürün başarıyla güncellendi',
+                    data: updatedProduct
+                });
+            } catch (error) {
+                await transaction.rollback();
+                throw error;
             }
-
-            const updatedProduct = await product.update({
-                ...req.body,
-                updatedBy: userId
-            });
-
-            logger.info('Product updated', {
-                productId: id,
-                userId: userId,
-                action: 'update_product'
-            });
-
-            res.json({
-                success: true,
-                message: 'Ürün başarıyla güncellendi',
-                data: updatedProduct
-            });
         } catch (error) {
             logger.error('Update product error:', error);
             res.status(500).json({
@@ -137,26 +201,49 @@ const productController = {
         try {
             const { id } = req.params;
             
-            const product = await Product.findByPk(id);
-            if (!product) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Ürün bulunamadı'
+            // Transaction başlat
+            const transaction = await sequelize.transaction();
+
+            try {
+                // Önce ürünü bul - sadece gerekli alanları seç
+                const product = await Product.findByPk(id, {
+                    attributes: [
+                        'id', 'name', 'description', 'sku', 
+                        'quantity', 'price', 'minStockLevel',
+                        'categoryId', 'locationId', 'position3D', 
+                        'createdBy', 'createdAt', 'updatedAt'
+                    ],
+                    transaction
                 });
+                
+                if (!product) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Ürün bulunamadı'
+                    });
+                }
+
+                // İlişkili stok hareketlerini sil
+                await StockMovement.destroy({
+                    where: { productId: id },
+                    transaction
+                });
+
+                // Sonra ürünü sil
+                await product.destroy({ transaction });
+
+                // Transaction'ı onayla
+                await transaction.commit();
+
+                res.json({
+                    success: true,
+                    message: 'Ürün başarıyla silindi'
+                });
+            } catch (error) {
+                await transaction.rollback();
+                throw error;
             }
-
-            await product.destroy();
-
-            logger.info('Product deleted', {
-                productId: id,
-                userId: req.user.id,
-                action: 'delete_product'
-            });
-
-            res.json({
-                success: true,
-                message: 'Ürün başarıyla silindi'
-            });
         } catch (error) {
             logger.error('Delete product error:', error);
             res.status(500).json({

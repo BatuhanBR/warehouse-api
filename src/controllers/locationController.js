@@ -1,5 +1,5 @@
 const Location = require('../models/location');
-const Product = require('../models/product');
+const Product = require('../models/Product');
 const logger = require('../config/logger');
 
 const locationController = {

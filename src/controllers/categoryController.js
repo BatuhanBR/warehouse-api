@@ -1,5 +1,5 @@
-const Category = require('../models/category');
-const Product = require('../models/product');
+const { Category, Product } = require('../models');
+const logger = require('../config/logger');
 
 // Kategori oluşturma
 exports.createCategory = async (req, res) => {
@@ -108,6 +108,31 @@ exports.deleteCategory = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message
+        });
+    }
+};
+
+// Basit kategori listesi (dropdown için)
+exports.getCategories = async (req, res) => {
+    try {
+        const categories = await Category.findAll({
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']]
+        });
+
+        // Debug için kategorileri logla
+        console.log('Bulunan kategoriler:', categories);
+
+        res.json({
+            success: true,
+            data: categories
+        });
+    } catch (error) {
+        console.error('Kategori getirme hatası:', error);
+        logger.error('Get categories error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Kategoriler getirilirken bir hata oluştu'
         });
     }
 };

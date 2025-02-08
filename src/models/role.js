@@ -14,7 +14,8 @@ module.exports = (sequelize, DataTypes) => {
       unique: true
     },
     description: {
-      type: DataTypes.STRING
+      type: DataTypes.STRING,
+      allowNull: true
     }
   }, {
     sequelize,

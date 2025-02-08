@@ -1,33 +1,27 @@
 'use strict';
 
+/** @type {import('sequelize-cli').Migration} */
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
+  async up(queryInterface, Sequelize) {
     await queryInterface.bulkInsert('Roles', [
-      { 
-        id: 1,
-        name: 'admin', 
-        description: 'Sistem yöneticisi', 
-        createdAt: new Date(), 
-        updatedAt: new Date() 
+      {
+        id: 1,  // ID'leri manuel olarak belirtiyoruz
+        name: 'admin',
+        description: 'Sistem yöneticisi',
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
-      { 
+      {
         id: 2,
-        name: 'manager', 
-        description: 'Depo yöneticisi', 
-        createdAt: new Date(), 
-        updatedAt: new Date() 
-      },
-      { 
-        id: 3,
-        name: 'staff', 
-        description: 'Depo personeli', 
-        createdAt: new Date(), 
-        updatedAt: new Date() 
+        name: 'user',
+        description: 'Normal kullanıcı',
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
-    ]);
+    ], {});
   },
 
-  down: async (queryInterface, Sequelize) => {
-    return queryInterface.bulkDelete('Roles', null, {});
+  async down(queryInterface, Sequelize) {
+    await queryInterface.bulkDelete('Roles', null, {});
   }
 };

@@ -77,13 +77,10 @@ app.use((err, req, res, next) => {
 });
 
 // Veritabanı bağlantısı ve sunucuyu başlat
-db.sequelize.sync().then(() => {
-    // Sunucuyu başlat
+db.sequelize.authenticate().then(() => {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
         logger.info(`Server ${PORT} portunda çalışıyor`);
-        logger.info('Email sistemi aktif');
-        logger.info('Cron job\'lar başlatıldı');
     });
 }).catch(err => {
     logger.error('Veritabanı bağlantı hatası:', err);

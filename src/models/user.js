@@ -4,10 +4,18 @@ const bcrypt = require('bcryptjs');
 module.exports = (sequelize, DataTypes) => {
     class User extends Model {
         static associate(models) {
-            User.belongsTo(models.Role, { foreignKey: 'roleId' });
-            User.hasMany(models.Product, { foreignKey: 'createdBy', as: 'createdProducts' });
-            User.hasMany(models.Product, { foreignKey: 'updatedBy', as: 'updatedProducts' });
-            User.hasMany(models.StockMovement, { foreignKey: 'createdBy', as: 'stockMovements' });
+            User.belongsTo(models.Role, { 
+                foreignKey: 'roleId',
+                as: 'role'
+            });
+            User.hasMany(models.Product, { 
+                foreignKey: 'createdBy', 
+                as: 'createdProducts' 
+            });
+            User.hasMany(models.StockMovement, { 
+                foreignKey: 'createdBy', 
+                as: 'stockMovements' 
+            });
         }
     }
 
@@ -46,8 +54,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         sequelize,
         modelName: 'User',
-        tableName: 'Users',
-        timestamps: true
+        tableName: 'Users'
     });
 
     return User;

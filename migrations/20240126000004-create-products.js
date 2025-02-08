@@ -13,17 +13,19 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: false
       },
+      description: {
+        type: Sequelize.TEXT
+      },
       sku: {
         type: Sequelize.STRING,
-        allowNull: false,
-        unique: true
-      },
-      price: {
-        type: Sequelize.DECIMAL(10, 2),
         allowNull: false
       },
       quantity: {
         type: Sequelize.INTEGER,
+        defaultValue: 0
+      },
+      price: {
+        type: Sequelize.DECIMAL(10, 2),
         defaultValue: 0
       },
       minStockLevel: {

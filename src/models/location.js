@@ -1,3 +1,4 @@
+'use strict';
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -9,22 +10,29 @@ module.exports = (sequelize, DataTypes) => {
       });
     }
   }
-
+  
   Location.init({
     name: {
       type: DataTypes.STRING,
       allowNull: false
     },
+    description: DataTypes.TEXT,
+    address: DataTypes.STRING,
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
+    },
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
     code: {
       type: DataTypes.STRING,
-      unique: true,
-      allowNull: false
+      allowNull: false,
+      unique: true
     },
-    section: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    row: {
+    rackNumber: {
       type: DataTypes.INTEGER,
       allowNull: false
     },
@@ -36,29 +44,68 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false
     },
-    capacity: {
-      type: DataTypes.INTEGER,
+    dimensions: {
+      type: DataTypes.JSON,
       allowNull: false
     },
-    occupied: {
+    volume: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const dim = this.dimensions;
+        return dim.width * dim.length * dim.height;
+      }
+    },
+    isOccupied: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false
+    },
+    productId: {
       type: DataTypes.INTEGER,
-      defaultValue: 0
+      allowNull: true,
+      references: {
+        model: 'Products',
+        key: 'id'
+      }
     },
-    status: {
-      type: DataTypes.ENUM('empty', 'partial', 'full'),
-      defaultValue: 'empty'
+    width: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      comment: 'Raf genişliği (cm)'
     },
-    coordinates: {
-      type: DataTypes.JSON
+    height: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      comment: 'Raf yüksekliği (cm)'
     },
-    description: {
-      type: DataTypes.TEXT
+    depth: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      comment: 'Raf derinliği (cm)'
+    },
+    totalCapacity: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return (this.width * this.height * this.depth) / 1000000; // m³ cinsinden
+      }
+    },
+    usedCapacity: {
+      type: DataTypes.VIRTUAL,
+      async get() {
+        const products = await this.getProducts();
+        return products.reduce((total, product) => total + product.totalVolume, 0);
+      }
+    },
+    availableCapacity: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.totalCapacity - this.usedCapacity;
+      }
     }
   }, {
     sequelize,
     modelName: 'Location',
     tableName: 'Locations'
   });
-
+  
   return Location;
 }; 

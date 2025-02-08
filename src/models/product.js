@@ -1,83 +1,55 @@
+'use strict';
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  const Product = sequelize.define('Product', {
-    id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true
-    },
+  class Product extends Model {
+    static associate(models) {
+      Product.belongsTo(models.Category, {
+        foreignKey: 'categoryId',
+        as: 'Category'
+      });
+      Product.belongsTo(models.User, {
+        foreignKey: 'createdBy',
+        as: 'creator'
+      });
+      Product.belongsTo(models.Location, {
+        foreignKey: 'locationId',
+        as: 'Location'
+      });
+    }
+  }
+  
+  Product.init({
     name: {
       type: DataTypes.STRING,
-      allowNull: false,
-      validate: {
-        notEmpty: {
-          msg: 'Ürün adı boş olamaz'
-        }
-      }
+      allowNull: false
     },
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: true
-    },
+    description: DataTypes.TEXT,
     sku: {
       type: DataTypes.STRING,
-      allowNull: false,
-      unique: {
-        msg: 'Bu SKU kodu zaten kullanılıyor'
-      },
-      validate: {
-        isValid(value) {
-          if (!/^\d{5}$/.test(value)) {
-            throw new Error('SKU 5 rakamdan oluşmalıdır (Örnek: 12345)');
-          }
-        }
-      }
+      allowNull: false
     },
     quantity: {
       type: DataTypes.INTEGER,
-      allowNull: false,
       defaultValue: 0,
-      validate: {
-        isInt: {
-          msg: 'Stok miktarı tam sayı olmalıdır'
-        },
-        min: {
-          args: [0],
-          msg: 'Stok miktarı negatif olamaz'
-        }
-      }
+      comment: 'Mevcut stok adedi'
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      validate: {
-        isDecimal: {
-          msg: 'Fiyat geçerli bir sayı olmalıdır'
-        },
-        min: {
-          args: [0],
-          msg: 'Fiyat negatif olamaz'
-        }
-      }
+      defaultValue: 0
     },
     minStockLevel: {
       type: DataTypes.INTEGER,
-      allowNull: false,
       defaultValue: 0,
-      validate: {
-        isInt: {
-          msg: 'Minimum stok seviyesi tam sayı olmalıdır'
-        },
-        min: {
-          args: [0],
-          msg: 'Minimum stok seviyesi negatif olamaz'
-        }
-      }
+      comment: 'Minimum stok seviyesi'
+    },
+    maxStockLevel: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      comment: 'Raf kapasitesine göre maksimum stok'
     },
     categoryId: {
       type: DataTypes.INTEGER,
-      allowNull: true,
       references: {
         model: 'Categories',
         key: 'id'
@@ -85,24 +57,78 @@ module.exports = (sequelize, DataTypes) => {
     },
     locationId: {
       type: DataTypes.INTEGER,
-      allowNull: true
-    },
-    position3D: {
-      type: DataTypes.JSON,
-      allowNull: true
+      references: {
+        model: 'Locations',
+        key: 'id'
+      }
     },
     createdBy: {
       type: DataTypes.INTEGER,
-      allowNull: false,
       references: {
         model: 'Users',
         key: 'id'
       }
     },
-    isStockCritical: {
+    dailyStorageRate: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0.00,
+      comment: 'Günlük depolama ücreti (TL)'
+    },
+    storageStartDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Depolama başlangıç tarihi'
+    },
+    expectedStorageDuration: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Beklenen depolama süresi (gün)'
+    },
+    totalStorageCost: {
       type: DataTypes.VIRTUAL,
       get() {
-        return this.quantity <= this.minStockLevel;
+        if (!this.storageStartDate || !this.dailyStorageRate) return 0;
+        
+        const today = new Date();
+        const startDate = new Date(this.storageStartDate);
+        const days = Math.ceil((today - startDate) / (1000 * 60 * 60 * 24));
+        
+        let discount = 1.0;
+        if (days > 180) discount = 0.85;      // 6+ ay: %15 indirim
+        else if (days > 90) discount = 0.90;  // 3+ ay: %10 indirim
+        else if (days > 30) discount = 0.95;  // 1+ ay: %5 indirim
+        
+        return parseFloat((this.dailyStorageRate * days * discount).toFixed(2));
+      }
+    },
+    width: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Ürün genişliği (cm)'
+    },
+    height: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Ürün yüksekliği (cm)'
+    },
+    length: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Ürün uzunluğu (cm)'
+    },
+    volumePerUnit: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return (this.width * this.height * this.length) / 1000000; // m³ cinsinden
+      }
+    },
+    totalVolume: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.volumePerUnit * this.quantity;
       }
     }
   }, {
@@ -113,19 +139,6 @@ module.exports = (sequelize, DataTypes) => {
     createdAt: true,
     updatedAt: true
   });
-
-  Product.associate = (models) => {
-    Product.belongsTo(models.Category, {
-      foreignKey: 'categoryId'
-    });
-    Product.belongsTo(models.User, {
-      foreignKey: 'createdBy',
-      as: 'creator'
-    });
-    Product.hasMany(models.StockMovement, {
-      foreignKey: 'productId'
-    });
-  };
-
+  
   return Product;
 };

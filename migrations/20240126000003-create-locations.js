@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
+  async up(queryInterface, Sequelize) {
     await queryInterface.createTable('Locations', {
       id: {
         allowNull: false,
@@ -14,28 +14,47 @@ module.exports = {
         allowNull: false,
         unique: true
       },
-      section: {
-        type: Sequelize.STRING,
-        allowNull: false
-      },
-      row: {
+      rackNumber: {
         type: Sequelize.INTEGER,
-        allowNull: false
+        allowNull: false,
+        validate: {
+          min: 1,
+          max: 10
+        }
       },
       level: {
         type: Sequelize.INTEGER,
-        allowNull: false
+        allowNull: false,
+        validate: {
+          min: 1,
+          max: 4
+        }
       },
       position: {
         type: Sequelize.INTEGER,
-        allowNull: false
+        allowNull: false,
+        validate: {
+          min: 1,
+          max: 4
+        }
       },
-      capacity: {
+      dimensions: {
+        type: Sequelize.JSON,
+        allowNull: false,
+        defaultValue: {
+          width: 0.8,
+          length: 1.2,
+          height: 1.5
+        }
+      },
+      isOccupied: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      productId: {
         type: Sequelize.INTEGER,
-        allowNull: false
-      },
-      coordinates: {
-        type: Sequelize.JSON
+        allowNull: true
       },
       createdAt: {
         allowNull: false,
@@ -47,7 +66,8 @@ module.exports = {
       }
     });
   },
-  down: async (queryInterface, Sequelize) => {
+
+  async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('Locations');
   }
 }; 

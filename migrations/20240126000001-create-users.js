@@ -1,13 +1,13 @@
 'use strict';
 
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
+  async up(queryInterface, Sequelize) {
     await queryInterface.createTable('Users', {
       id: {
         allowNull: false,
+        autoIncrement: true,
         primaryKey: true,
-        type: Sequelize.INTEGER,
-        autoIncrement: true
+        type: Sequelize.INTEGER
       },
       username: {
         type: Sequelize.STRING,
@@ -26,10 +26,13 @@ module.exports = {
       roleId: {
         type: Sequelize.INTEGER,
         allowNull: false,
+        defaultValue: 3,
         references: {
           model: 'Roles',
           key: 'id'
-        }
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
       },
       isActive: {
         type: Sequelize.BOOLEAN,
@@ -45,7 +48,8 @@ module.exports = {
       }
     });
   },
-  down: async (queryInterface, Sequelize) => {
+
+  async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('Users');
   }
 }; 

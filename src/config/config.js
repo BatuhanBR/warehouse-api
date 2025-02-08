@@ -5,8 +5,7 @@ module.exports = {
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'your_password',
     database: process.env.DB_NAME || 'warehouse_db',
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
+    host: process.env.DB_HOST || '127.0.0.1',
     dialect: 'postgres'
   },
   test: {

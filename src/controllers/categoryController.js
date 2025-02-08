@@ -7,8 +7,7 @@ exports.createCategory = async (req, res) => {
         const categoryData = {
             name: req.body.name,
             description: req.body.description,
-            createdBy: 1, // Şimdilik sabit bir değer kullanıyoruz
-            updatedBy: 1  // Şimdilik sabit bir değer kullanıyoruz
+            createdBy: 1  // Şimdilik sabit bir değer kullanıyoruz
         };
 
         const category = await Category.create(categoryData);
@@ -62,8 +61,7 @@ exports.updateCategory = async (req, res) => {
 
         const updateData = {
             name: req.body.name,
-            description: req.body.description,
-            updatedBy: 1 // Şimdilik sabit bir değer kullanıyoruz
+            description: req.body.description
         };
 
         await category.update(updateData);

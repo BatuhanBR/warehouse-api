@@ -1,56 +1,44 @@
 'use strict';
 
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
-    return queryInterface.bulkInsert('Locations', [
-      {
-        code: 'A1-1-1',
-        section: 'A',
-        row: 1,
-        level: 1,
-        position: 1,
-        capacity: 100,
-        coordinates: JSON.stringify({ x: 0, y: 0, z: 0 }),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        code: 'A1-1-2',
-        section: 'A',
-        row: 1,
-        level: 1,
-        position: 2,
-        capacity: 100,
-        coordinates: JSON.stringify({ x: 1, y: 0, z: 0 }),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        code: 'A1-2-1',
-        section: 'A',
-        row: 2,
-        level: 1,
-        position: 1,
-        capacity: 100,
-        coordinates: JSON.stringify({ x: 0, y: 1, z: 0 }),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        code: 'A1-2-2',
-        section: 'A',
-        row: 2,
-        level: 1,
-        position: 2,
-        capacity: 100,
-        coordinates: JSON.stringify({ x: 1, y: 1, z: 0 }),
-        createdAt: new Date(),
-        updatedAt: new Date()
+  async up(queryInterface, Sequelize) {
+    const locations = [];
+    
+    // Her raf için standart boyutlar
+    const standardRackSizes = {
+      small: { width: 80, height: 180, depth: 40 },
+      medium: { width: 100, height: 200, depth: 60 },
+      large: { width: 120, height: 220, depth: 80 }
+    };
+    
+    // 10 raf, her rafta 4 kat, her katta 4 bölme
+    for (let rack = 1; rack <= 10; rack++) {
+      for (let level = 1; level <= 4; level++) {
+        for (let pos = 1; pos <= 4; pos++) {
+          // Raf boyutunu rastgele seç
+          const size = Object.values(standardRackSizes)[Math.floor(Math.random() * 3)];
+          
+          locations.push({
+            code: `R${rack.toString().padStart(2, '0')}-${level}-${pos}`,
+            rackNumber: rack,
+            level: level,
+            position: pos,
+            width: size.width,
+            height: size.height,
+            depth: size.depth,
+            dimensions: JSON.stringify(size),
+            isOccupied: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
       }
-    ]);
+    }
+
+    await queryInterface.bulkInsert('Locations', locations, {});
   },
 
-  down: async (queryInterface, Sequelize) => {
-    return queryInterface.bulkDelete('Locations', null, {});
+  async down(queryInterface, Sequelize) {
+    await queryInterface.bulkDelete('Locations', null, {});
   }
 }; 

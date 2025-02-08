@@ -33,6 +33,15 @@ module.exports = (sequelize, DataTypes) => {
     createdBy: {
       type: DataTypes.INTEGER,
       allowNull: false
+    },
+    movementDate: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW
+    },
+    plannedExitDate: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     sequelize,

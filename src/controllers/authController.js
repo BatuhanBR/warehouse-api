@@ -62,67 +62,58 @@ const authController = {
         try {
             const { email, password } = req.body;
             console.log('Login attempt for:', email);
+            console.log('Attempted password:', password);
 
             const user = await User.findOne({
                 where: { email },
                 include: [{
                     model: Role,
-                    attributes: ['name']
+                    as: 'role'
                 }]
             });
-
-            console.log('Found user:', user ? user.toJSON() : null);
 
             if (!user) {
                 return res.status(401).json({
                     success: false,
-                    message: 'Geçersiz email veya şifre'
+                    message: 'Kullanıcı bulunamadı'
                 });
             }
 
-            // Şifre kontrolü
+            console.log('Found user password hash:', user.password);
+            
             const isValidPassword = await bcrypt.compare(password, user.password);
-            console.log('Raw password:', password);
-            console.log('Hashed password in DB:', user.password);
-            console.log('Password check result:', isValidPassword);
+            console.log('Password comparison result:', isValidPassword);
 
             if (!isValidPassword) {
                 return res.status(401).json({
                     success: false,
-                    message: 'Geçersiz email veya şifre'
+                    message: 'Geçersiz şifre'
                 });
             }
 
-            // Kullanıcı aktif mi kontrolü
-            if (!user.isActive) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'Hesabınız aktif değil'
-                });
-            }
-
-            // Token oluştur
             const token = jwt.sign(
                 { 
-                    id: user.id,
-                    role: user.Role.name 
+                    id: user.id, 
+                    email: user.email,
+                    role: user.role.name
                 },
                 process.env.JWT_SECRET,
-                { expiresIn: '1d' }
+                { expiresIn: '24h' }
             );
 
             res.json({
                 success: true,
                 data: {
+                    token,
                     user: {
                         id: user.id,
                         username: user.username,
                         email: user.email,
-                        role: user.Role.name
-                    },
-                    token
+                        role: user.role.name
+                    }
                 }
             });
+
         } catch (error) {
             console.error('Login error details:', error);
             res.status(500).json({

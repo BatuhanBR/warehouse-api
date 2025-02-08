@@ -11,4 +11,7 @@ router.post('/', auth, validateRequest(productSchema.create), productController.
 router.put('/:id', auth, validateRequest(productSchema.update), productController.updateProduct);
 router.delete('/:id', auth, productController.deleteProduct);
 
+// Toplu silme endpoint'ini ekleyelim
+router.post('/bulk-delete', auth, productController.bulkDelete);
+
 module.exports = router;

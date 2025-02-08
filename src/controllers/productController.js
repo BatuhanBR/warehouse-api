@@ -1,4 +1,4 @@
-const { Product, Category, User, StockMovement, sequelize } = require('../models');
+const { Product, Category, User, StockMovement, sequelize, Location } = require('../models');
 const { Op, Sequelize } = require('sequelize');
 const logger = require('../config/logger');
 
@@ -6,46 +6,81 @@ const logger = require('../config/logger');
 console.log('Product Model:', Product);
 console.log('User Model:', User);
 
+const PRODUCT_ATTRIBUTES = [
+    'id', 'name', 'description', 'sku', 
+    'quantity', 'price', 'minStockLevel', 'maxStockLevel',
+    'categoryId', 'locationId', 'createdBy',
+    'width', 'height', 'length',
+    'dailyStorageRate', 'storageStartDate', 'expectedStorageDuration',
+    'createdAt', 'updatedAt'
+];
+
 const productController = {
     getProducts: async (req, res) => {
         try {
             const products = await Product.findAll({
                 attributes: [
-                    'id', 'name', 'description', 'sku', 
-                    'quantity', 'price', 'minStockLevel',
-                    'categoryId', 'locationId', 'createdBy',
-                    'position3D', 'createdAt', 'updatedAt'
+                    ...PRODUCT_ATTRIBUTES,
+                    [
+                        sequelize.literal(`COALESCE(("Product"."width" * "Product"."height" * "Product"."length") / 1000000.0, 0)`),
+                        'volumePerUnit'
+                    ],
+                    [
+                        sequelize.literal(`COALESCE(("Product"."width" * "Product"."height" * "Product"."length" * "Product"."quantity") / 1000000.0, 0)`),
+                        'totalVolume'
+                    ],
+                    [
+                        sequelize.literal(`
+                            CASE 
+                                WHEN "Product"."storageStartDate" IS NOT NULL AND "Product"."dailyStorageRate" IS NOT NULL THEN
+                                    CASE
+                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 180 THEN 
+                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.85
+                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 90 THEN 
+                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.90
+                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 30 THEN 
+                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.95
+                                        ELSE 
+                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate")
+                                    END
+                                ELSE 0
+                            END
+                        `),
+                        'totalStorageCost'
+                    ]
                 ],
                 include: [
                     {
                         model: Category,
+                        as: 'Category',
                         attributes: ['id', 'name']
                     },
                     {
-                        model: User,
-                        as: 'creator',
-                        attributes: ['id', 'username']
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['id', 'code', 'rackNumber', 'level', 'position']
                     }
                 ],
                 order: [['createdAt', 'DESC']]
             });
 
-            res.json({ success: true, data: products });
+            res.json({
+                success: true,
+                data: products.map(product => product.get({ plain: true }))
+            });
         } catch (error) {
             console.error('Get products error:', error);
-            res.status(500).json({ success: false, error: 'Internal server error' });
+            res.status(500).json({
+                success: false,
+                message: 'Ürünler yüklenirken bir hata oluştu'
+            });
         }
     },
 
     getProductById: async (req, res) => {
         try {
             const product = await Product.findByPk(req.params.id, {
-                attributes: [
-                    'id', 'name', 'description', 'sku', 
-                    'quantity', 'price', 'minStockLevel',
-                    'categoryId', 'locationId', 'position3D', 
-                    'createdBy', 'createdAt', 'updatedAt'
-                ],
+                attributes: PRODUCT_ATTRIBUTES,
                 include: [
                     { 
                         model: User, 
@@ -78,13 +113,6 @@ const productController = {
         try {
             const userId = req.user.id;
             
-            console.log('-------- POSTMAN TEST --------');
-            console.log('Gelen İstek:', {
-                headers: req.headers,
-                body: req.body,
-                user: req.user
-            });
-
             const productData = {
                 name: req.body.name.trim(),
                 sku: req.body.sku.trim(),
@@ -93,33 +121,21 @@ const productController = {
                 price: parseFloat(req.body.price) || 0,
                 minStockLevel: parseInt(req.body.minStock) || 0,
                 categoryId: parseInt(req.body.categoryId || req.body.category),
+                locationId: req.body.locationId || null,
                 createdBy: userId
             };
 
-            console.log('İşlenmiş Veri:', productData);
-
             const product = await Product.create(productData, {
-                returning: ['id', 'name', 'description', 'sku', 'quantity', 'price', 
-                            'minStockLevel', 'categoryId', 'locationId', 'position3D', 
-                            'createdBy', 'createdAt', 'updatedAt']
+                attributes: PRODUCT_ATTRIBUTES
             });
-            console.log('Oluşturulan Ürün:', product.toJSON());
 
             res.status(201).json({
                 success: true,
                 message: 'Ürün başarıyla oluşturuldu',
                 data: product
             });
-
         } catch (error) {
-            console.error('Ürün Oluşturma Hatası:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                errors: error.errors,
-                fullError: JSON.stringify(error, null, 2)
-            });
-            
+            console.error('Create product error:', error);
             if (error.name === 'SequelizeValidationError' || 
                 error.name === 'SequelizeUniqueConstraintError') {
                 return res.status(400).json({
@@ -134,62 +150,73 @@ const productController = {
 
             res.status(500).json({
                 success: false,
-                message: 'Ürün oluşturulurken bir hata oluştu',
-                error: error.message
+                message: 'Ürün oluşturulurken bir hata oluştu'
             });
         }
     },
 
     updateProduct: async (req, res) => {
+        const transaction = await sequelize.transaction();
+        
         try {
             const { id } = req.params;
-            const userId = req.user.id;
             
-            // Transaction başlat
-            const transaction = await sequelize.transaction();
+            // Önce ürünü bulalım
+            const product = await Product.findByPk(id);
 
-            try {
-                const product = await Product.findByPk(id, {
-                    attributes: [
-                        'id', 'name', 'description', 'sku', 
-                        'quantity', 'price', 'minStockLevel',
-                        'categoryId', 'locationId', 'position3D', 
-                        'createdBy', 'createdAt', 'updatedAt'
-                    ],
-                    transaction
-                });
-
-                if (!product) {
-                    await transaction.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Ürün bulunamadı'
-                    });
-                }
-
-                // updatedBy'ı kaldırdık
-                const updatedProduct = await product.update(req.body, { transaction });
-
-                // Transaction'ı onayla
-                await transaction.commit();
-
-                logger.info('Product updated', {
-                    productId: id,
-                    userId: userId,
-                    action: 'update_product'
-                });
-
-                res.json({
-                    success: true,
-                    message: 'Ürün başarıyla güncellendi',
-                    data: updatedProduct
-                });
-            } catch (error) {
+            if (!product) {
                 await transaction.rollback();
-                throw error;
+                return res.status(404).json({
+                    success: false,
+                    message: 'Ürün bulunamadı'
+                });
             }
+
+            // Güncellenecek verileri hazırla
+            const updateData = {
+                name: req.body.name.trim(),
+                sku: req.body.sku.trim(),
+                description: req.body.description || '',
+                quantity: parseInt(req.body.stock) || 0,
+                price: parseFloat(req.body.price) || 0,
+                minStockLevel: parseInt(req.body.minStock) || 0,
+                categoryId: parseInt(req.body.categoryId || req.body.category),
+                locationId: req.body.locationId || null
+            };
+
+            // Direkt SQL UPDATE sorgusu kullan
+            await Product.update(updateData, {
+                where: { id: id },
+                transaction
+            });
+
+            await transaction.commit();
+
+            // Güncellenmiş ürünü getir
+            const updatedProduct = await Product.findByPk(id, {
+                include: [
+                    {
+                        model: Category,
+                        as: 'Category',
+                        attributes: ['id', 'name']
+                    },
+                    {
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['id', 'code', 'rackNumber', 'level', 'position']
+                    }
+                ]
+            });
+
+            res.json({
+                success: true,
+                message: 'Ürün başarıyla güncellendi',
+                data: updatedProduct
+            });
+
         } catch (error) {
-            logger.error('Update product error:', error);
+            await transaction.rollback();
+            console.error('Update product error:', error);
             res.status(500).json({
                 success: false,
                 message: 'Ürün güncellenirken bir hata oluştu'
@@ -198,54 +225,40 @@ const productController = {
     },
 
     deleteProduct: async (req, res) => {
+        const transaction = await sequelize.transaction();
+        
         try {
             const { id } = req.params;
-            
-            // Transaction başlat
-            const transaction = await sequelize.transaction();
 
-            try {
-                // Önce ürünü bul - sadece gerekli alanları seç
-                const product = await Product.findByPk(id, {
-                    attributes: [
-                        'id', 'name', 'description', 'sku', 
-                        'quantity', 'price', 'minStockLevel',
-                        'categoryId', 'locationId', 'position3D', 
-                        'createdBy', 'createdAt', 'updatedAt'
-                    ],
-                    transaction
-                });
-                
-                if (!product) {
-                    await transaction.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Ürün bulunamadı'
-                    });
-                }
+            // Önce ürünün stok hareketlerini silelim
+            await StockMovement.destroy({
+                where: { productId: id },
+                transaction
+            });
 
-                // İlişkili stok hareketlerini sil
-                await StockMovement.destroy({
-                    where: { productId: id },
-                    transaction
-                });
+            // Sonra ürünü silelim
+            const product = await Product.findByPk(id, {
+                attributes: PRODUCT_ATTRIBUTES // Sadece var olan kolonları seç
+            });
 
-                // Sonra ürünü sil
-                await product.destroy({ transaction });
-
-                // Transaction'ı onayla
-                await transaction.commit();
-
-                res.json({
-                    success: true,
-                    message: 'Ürün başarıyla silindi'
-                });
-            } catch (error) {
+            if (!product) {
                 await transaction.rollback();
-                throw error;
+                return res.status(404).json({
+                    success: false,
+                    message: 'Ürün bulunamadı'
+                });
             }
+
+            await product.destroy({ transaction });
+            await transaction.commit();
+
+            res.json({
+                success: true,
+                message: 'Ürün başarıyla silindi'
+            });
         } catch (error) {
-            logger.error('Delete product error:', error);
+            await transaction.rollback();
+            console.error('Delete product error:', error);
             res.status(500).json({
                 success: false,
                 message: 'Ürün silinirken bir hata oluştu'
@@ -446,27 +459,124 @@ const productController = {
     },
 
     // Toplu silme işlemi
-    bulkDeleteProducts: async (req, res) => {
+    bulkDelete: async (req, res) => {
+        const transaction = await sequelize.transaction();
+        
         try {
-            const { productIds } = req.body;
+            const { ids } = req.body;
             
-            await Product.destroy({
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Silinecek ürün ID\'leri geçerli değil'
+                });
+            }
+
+            // Önce bu ürünlere ait tüm stok hareketlerini silelim
+            await StockMovement.destroy({
+                where: {
+                    productId: {
+                        [Op.in]: ids
+                    }
+                },
+                transaction
+            });
+
+            // Sonra ürünleri silelim
+            const deletedCount = await Product.destroy({
                 where: {
                     id: {
-                        [Op.in]: productIds
+                        [Op.in]: ids
                     }
-                }
+                },
+                transaction
             });
+
+            await transaction.commit();
 
             res.json({
                 success: true,
-                message: `${productIds.length} ürün başarıyla silindi`
+                message: `${deletedCount} ürün başarıyla silindi`,
+                data: { deletedCount }
             });
+
         } catch (error) {
+            await transaction.rollback();
             console.error('Bulk delete error:', error);
             res.status(500).json({
                 success: false,
-                error: 'Ürünler silinirken bir hata oluştu'
+                message: 'Ürünler silinirken bir hata oluştu'
+            });
+        }
+    },
+
+    // Stok girişi kontrolü
+    checkStockInCapacity: async (product, location, quantity) => {
+        const newVolume = product.volumePerUnit * quantity;
+        const availableSpace = location.availableCapacity;
+        
+        if (newVolume > availableSpace) {
+            throw new Error(`Yetersiz raf kapasitesi. Gereken: ${newVolume}m³, Mevcut: ${availableSpace}m³`);
+        }
+        
+        // Maksimum stok seviyesini güncelle
+        product.maxStockLevel = Math.floor(location.totalCapacity / product.volumePerUnit);
+    },
+
+    // Stok hareketi öncesi kontrol
+    handleStockMovement: async (req, res) => {
+        try {
+            const { productId, locationId, quantity, type } = req.body;
+            const product = await Product.findByPk(productId);
+            const location = await Location.findByPk(locationId);
+            
+            if (type === 'IN') {
+                await this.checkStockInCapacity(product, location, quantity);
+            }
+            
+            // Stok hareketi işlemleri...
+        } catch (error) {
+            // Hata yönetimi...
+        }
+    },
+
+    fetchProducts: async (req, res) => {
+        try {
+            const response = await productService.getAllProducts();
+            
+            if (response.success && Array.isArray(response.data)) {
+                const formattedProducts = response.data.map(product => ({
+                    id: product.id,
+                    name: product.name,
+                    sku: product.sku,
+                    quantity: product.quantity,
+                    Category: product.Category,  // Tüm kategori bilgisini gönder
+                    stock: product.quantity,
+                    minStock: product.minStockLevel,
+                    price: product.price || 0,
+                    description: product.description || '',
+                    locationId: product.locationId,
+                    location: product.Location?.code || 'Belirtilmemiş',
+                    width: product.width,
+                    height: product.height,
+                    length: product.length,
+                    dailyStorageRate: product.dailyStorageRate || 0,
+                    storageStartDate: product.storageStartDate,
+                    expectedStorageDuration: product.expectedStorageDuration,
+                    totalStorageCost: product.totalStorageCost || 0,
+                    totalVolume: product.totalVolume || 0
+                }));
+
+                res.json({
+                    success: true,
+                    data: formattedProducts
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Ürünler yüklenirken bir hata oluştu!'
             });
         }
     }

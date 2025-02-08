@@ -42,8 +42,7 @@ const importExportController = {
                 } else {
                     products.push({
                         ...product,
-                        createdBy: req.user.id,
-                        updatedBy: req.user.id
+                        createdBy: req.user.id
                     });
                 }
             });

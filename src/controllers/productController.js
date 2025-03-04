@@ -12,6 +12,7 @@ const PRODUCT_ATTRIBUTES = [
     'categoryId', 'locationId', 'createdBy',
     'width', 'height', 'length',
     'dailyStorageRate', 'storageStartDate', 'expectedStorageDuration',
+    'company',
     'createdAt', 'updatedAt'
 ];
 
@@ -21,6 +22,7 @@ const productController = {
             const products = await Product.findAll({
                 attributes: [
                     ...PRODUCT_ATTRIBUTES,
+                    'company',
                     [
                         sequelize.literal(`COALESCE(("Product"."width" * "Product"."height" * "Product"."length") / 1000000.0, 0)`),
                         'volumePerUnit'
@@ -113,21 +115,73 @@ const productController = {
         try {
             const userId = req.user.id;
             
-            const productData = {
-                name: req.body.name.trim(),
-                sku: req.body.sku.trim(),
-                description: req.body.description || '',
-                quantity: parseInt(req.body.stock) || 0,
-                price: parseFloat(req.body.price) || 0,
-                minStockLevel: parseInt(req.body.minStock) || 0,
-                categoryId: parseInt(req.body.categoryId || req.body.category),
-                locationId: req.body.locationId || null,
-                createdBy: userId
+            // Kategori bazlı günlük fiyat çarpanları
+            const categoryDailyRates = {
+                'Elektronik': 150,    // Elektronik ürünler için günlük 150₺
+                'Giyim': 80,         // Giyim için günlük 80₺
+                'Ev & Yaşam': 100,   // Ev & Yaşam için günlük 100₺
+                'Spor': 90,          // Spor malzemeleri için günlük 90₺
+                'Kitap': 50,         // Kitaplar için günlük 50₺
+                'Kozmetik': 120,     // Kozmetik için günlük 120₺
+                'Oyuncak': 70,       // Oyuncaklar için günlük 70₺
+                'Ofis': 60,          // Ofis malzemeleri için günlük 60₺
+                'Gıda': 200,         // Gıda ürünleri için günlük 200₺
+                'Bahçe': 110         // Bahçe ürünleri için günlük 110₺
             };
 
-            const product = await Product.create(productData, {
-                attributes: PRODUCT_ATTRIBUTES
-            });
+            // Kategoriyi bul
+            const category = await Category.findByPk(req.body.categoryId);
+            const dailyRate = categoryDailyRates[category?.name] || 100; // Varsayılan günlük ücret 100₺
+
+            // Beklenen depolama süresi (gün)
+            const expectedDuration = parseInt(req.body.expectedStorageDuration) || 30; // Minimum 30 gün
+
+            // Süreye göre indirim oranları
+            let discountRate = 1.0;
+            if (expectedDuration > 180) discountRate = 0.7;      // 6+ ay: %30 indirim
+            else if (expectedDuration > 90) discountRate = 0.8;  // 3+ ay: %20 indirim
+            else if (expectedDuration > 30) discountRate = 0.9;  // 1+ ay: %10 indirim
+
+            // Final fiyat hesaplama
+            const calculatedPrice = Math.max(dailyRate * expectedDuration * discountRate, 100);
+
+            // Depolama ücreti hesaplama (hacme göre)
+            const width = parseFloat(req.body.width) || 0;
+            const height = parseFloat(req.body.height) || 0;
+            const length = parseFloat(req.body.length) || 0;
+            const volumeInCubicMeters = (width * height * length) / 1000000;
+            const baseRate = 50;
+            const dailyStorageRate = Math.max(baseRate * volumeInCubicMeters, 50);
+
+            const productData = {
+                name: req.body.name.trim(),
+                description: req.body.description || '',
+                sku: req.body.sku.trim(),
+                quantity: parseInt(req.body.quantity) || 0,
+                price: calculatedPrice, // Hesaplanan fiyat
+                minStockLevel: parseInt(req.body.minStockLevel) || 0,
+                maxStockLevel: parseInt(req.body.maxStockLevel) || 0,
+                width: width,
+                height: height,
+                length: length,
+                dailyStorageRate: dailyStorageRate,
+                storageStartDate: req.body.storageStartDate || null,
+                expectedStorageDuration: expectedDuration,
+                categoryId: parseInt(req.body.categoryId),
+                locationId: req.body.locationId || null,
+                createdBy: userId,
+                company: req.body.company || ''
+            };
+
+            const product = await Product.create(productData);
+
+            // Lokasyonu güncelle
+            if (productData.locationId) {
+                await Location.update(
+                    { isOccupied: true },
+                    { where: { id: productData.locationId } }
+                );
+            }
 
             res.status(201).json({
                 success: true,
@@ -136,21 +190,10 @@ const productController = {
             });
         } catch (error) {
             console.error('Create product error:', error);
-            if (error.name === 'SequelizeValidationError' || 
-                error.name === 'SequelizeUniqueConstraintError') {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validasyon hatası',
-                    errors: error.errors.map(err => ({
-                        field: err.path,
-                        message: err.message
-                    }))
-                });
-            }
-
-            res.status(500).json({
+            res.status(400).json({
                 success: false,
-                message: 'Ürün oluşturulurken bir hata oluştu'
+                message: 'Ürün oluşturulurken bir hata oluştu',
+                error: error.message
             });
         }
     },
@@ -181,7 +224,8 @@ const productController = {
                 price: parseFloat(req.body.price) || 0,
                 minStockLevel: parseInt(req.body.minStock) || 0,
                 categoryId: parseInt(req.body.categoryId || req.body.category),
-                locationId: req.body.locationId || null
+                locationId: req.body.locationId || null,
+                company: req.body.company || ''
             };
 
             // Direkt SQL UPDATE sorgusu kullan
@@ -578,6 +622,27 @@ const productController = {
                 success: false,
                 message: 'Ürünler yüklenirken bir hata oluştu!'
             });
+        }
+    },
+
+    // Tüm ürünleri getir
+    getAllProducts: async (req, res) => {
+        try {
+            const products = await Product.findAll({
+                include: [
+                    {
+                        model: Category,
+                        as: 'Category'
+                    },
+                    {
+                        model: Location,
+                        as: 'Location'
+                    }
+                ]
+            });
+            res.json({ success: true, data: products });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
         }
     }
 };

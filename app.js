@@ -10,6 +10,7 @@ const logger = require('./src/config/logger');
 const logActivity = require('./src/middleware/activityLogger');
 const { initializeDatabase } = require('./src/models');
 require('./src/jobs/stockAlertJob');  // Cron job'ları başlat
+const activityLogger = require('./src/middleware/activityLogger');
 
 const app = express();
 
@@ -23,7 +24,7 @@ app.use(helmet());
 
 // Rate limiters
 app.use('/api/auth', authLimiter);
-app.use('/api', apiLimiter);
+app.use('/api/', apiLimiter);
 
 // Morgan'ı özelleştirilmiş formatta kullan
 app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"', {
@@ -34,6 +35,10 @@ app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:htt
 
 // Activity logger'ı ekle
 app.use(logActivity);
+app.use(activityLogger);  // Aktivite logger'ı ekle
+
+// Debug için log ekleyelim
+console.log('Loading routes...');
 
 // Route'ları import et
 const productRoutes = require('./src/routes/productRoutes');
@@ -48,6 +53,8 @@ const locationRoutes = require('./src/routes/locationRoutes');
 const importExportRoutes = require('./src/routes/importExportRoutes');
 const testRoutes = require('./src/routes/testRoutes');
 const stockMovementRoutes = require('./src/routes/stockMovementRoutes');
+const warehouseRoutes = require('./src/routes/warehouseRoutes');
+console.log('Warehouse routes loaded');
 
 // Ana route
 app.get('/', (req, res) => {
@@ -66,6 +73,8 @@ app.use('/api/stock-alerts', stockAlertRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/test', testRoutes);
+app.use('/api/roles', roleRoutes);
+app.use('/api/warehouse', warehouseRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {

@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const Product = require('../models/product');
+const { Product } = require('../models');
 const StockMovement = require('../models/stockMovement');
 const { sequelize } = require('../models');
 

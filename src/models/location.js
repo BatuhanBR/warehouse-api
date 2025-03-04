@@ -4,9 +4,9 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Location extends Model {
     static associate(models) {
-      Location.hasMany(models.Product, {
+      Location.hasOne(models.Product, {
         foreignKey: 'locationId',
-        as: 'products'
+        as: 'Product'
       });
     }
   }
@@ -68,19 +68,16 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     width: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      comment: 'Raf genişliği (cm)'
+      type: DataTypes.FLOAT,
+      defaultValue: 100
     },
     height: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      comment: 'Raf yüksekliği (cm)'
+      type: DataTypes.FLOAT,
+      defaultValue: 100
     },
     depth: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      comment: 'Raf derinliği (cm)'
+      type: DataTypes.FLOAT,
+      defaultValue: 100
     },
     totalCapacity: {
       type: DataTypes.VIRTUAL,

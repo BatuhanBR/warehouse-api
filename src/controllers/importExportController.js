@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const Product = require('../models/product');
+const { Product } = require('../models');
 const StockMovement = require('../models/stockMovement');
 const logger = require('../config/logger');
 const { Op } = require('sequelize');

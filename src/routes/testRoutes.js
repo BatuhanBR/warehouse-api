@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const emailService = require('../services/emailService');
-const Product = require('../models/product');
+const { Product } = require('../models');
 const { protect } = require('../middleware/authMiddleware');
 const { sequelize } = require('../models');
 

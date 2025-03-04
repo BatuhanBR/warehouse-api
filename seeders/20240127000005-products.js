@@ -30,26 +30,63 @@ module.exports = {
       ]
     };
 
-    // Lokasyon sayısını al
-    const locations = await queryInterface.sequelize.query(
-      'SELECT id FROM "Locations";',
-      { type: queryInterface.sequelize.QueryTypes.SELECT }
-    );
+    // Şirket isimleri listesi ekleyin (products.forEach üstüne)
+    const companyNames = [
+      'TechCorp',
+      'InnovateSolutions',
+      'GlobalTrade',
+      'SmartTech',
+      'FutureWorks',
+      'EliteCorp',
+      'PrimeTech',
+      'NextGen Industries',
+      'DigitalWave',
+      'MegaCorp',
+      'AlphaTech',
+      'OmegaSystems',
+      'PioneerTech',
+      'VisionaryTech',
+      'ApexCorp',
+      'InfinityTech',
+      'StarTech',
+      'UnityTrade',
+      'ProTech Solutions',
+      'BlueSky Industries',
+      'RedRock Technologies',
+      'GreenLeaf Corp',
+      'SilverLine Systems',
+      'GoldStar Tech',
+      'CrystalTech',
+      'PeakPerformance',
+      'SummitSolutions',
+      'ValleyTech',
+      'RiverFlow Systems',
+      'OceanWave Corp',
+      'MountainTop Tech',
+      'SunriseTech',
+      'SunsetSolutions',
+      'EagleTech',
+      'FalconSystems'
+    ];
 
-    // Her kategori için ürünler oluştur
-    categories.forEach(category => {
+    // Toplam 100 ürün için kategori başına ürün sayısını hesapla
+    const productsPerCategory = Math.floor(100 / categories.length); // Her kategoriye eşit dağıtım
+    const remainingProducts = 100 % categories.length; // Kalan ürünleri ilk kategorilere ekle
+
+    categories.forEach((category, index) => {
       const templates = productTemplates[category.name] || [
         { base: 'Ürün', price: { min: 100, max: 1000 }, dimensions: { width: 30, height: 30, depth: 30 } }
       ];
       
-      const productCount = Math.floor(Math.random() * 11) + 25; // 25-35 arası
+      // Her kategori için ürün sayısını belirle
+      const productCount = productsPerCategory + (index < remainingProducts ? 1 : 0);
       
       for (let i = 0; i < productCount; i++) {
         const template = templates[Math.floor(Math.random() * templates.length)];
         const modelNo = Math.floor(Math.random() * 999) + 1;
         const variant = ['Pro', 'Plus', 'Lite', 'Max', 'Basic'][Math.floor(Math.random() * 5)];
         const storageStartDate = new Date();
-        storageStartDate.setDate(storageStartDate.getDate() - Math.floor(Math.random() * 90)); // Son 90 gün içinde
+        storageStartDate.setDate(storageStartDate.getDate() - Math.floor(Math.random() * 90));
 
         products.push({
           name: `${template.base} ${variant} ${modelNo}`,
@@ -66,8 +103,9 @@ module.exports = {
           storageStartDate: storageStartDate,
           expectedStorageDuration: Math.floor(Math.random() * 180) + 30,
           categoryId: category.id,
-          locationId: Math.floor(Math.random() * 160) + 1, // 160 lokasyon olduğunu varsayıyorum
+          locationId: Math.floor(Math.random() * 100) + 1, // Sadece ilk 100 lokasyonu kullan
           createdBy: 1,
+          company: companyNames[Math.floor(Math.random() * companyNames.length)], // Rastgele bir şirket seç
           createdAt: new Date(),
           updatedAt: new Date()
         });

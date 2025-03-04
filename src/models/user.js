@@ -27,34 +27,52 @@ module.exports = (sequelize, DataTypes) => {
         },
         email: {
             type: DataTypes.STRING,
-            allowNull: false,
+            allowNull: true,
             unique: true,
             validate: {
                 isEmail: true
             }
         },
+        phone: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        address: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
         password: {
             type: DataTypes.STRING,
-            allowNull: false,
-            set(value) {
-                const salt = bcrypt.genSaltSync(10);
-                const hash = bcrypt.hashSync(value, salt);
-                this.setDataValue('password', hash);
-            }
+            allowNull: false
         },
         roleId: {
             type: DataTypes.INTEGER,
-            allowNull: false,
-            defaultValue: 3
+            allowNull: false
         },
         isActive: {
             type: DataTypes.BOOLEAN,
             defaultValue: true
+        },
+        lastLoginAt: {
+            type: DataTypes.DATE,
+            allowNull: true
         }
     }, {
         sequelize,
         modelName: 'User',
-        tableName: 'Users'
+        tableName: 'Users',
+        hooks: {
+            beforeCreate: async (user) => {
+                if (user.password) {
+                    user.password = await bcrypt.hash(user.password, 10);
+                }
+            },
+            beforeUpdate: async (user) => {
+                if (user.changed('password')) {
+                    user.password = await bcrypt.hash(user.password, 10);
+                }
+            }
+        }
     });
 
     return User;

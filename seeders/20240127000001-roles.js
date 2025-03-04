@@ -2,10 +2,10 @@
 
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
-  async up(queryInterface, Sequelize) {
+  up: async (queryInterface, Sequelize) => {
     await queryInterface.bulkInsert('Roles', [
       {
-        id: 1,  // ID'leri manuel olarak belirtiyoruz
+        id: 1,
         name: 'admin',
         description: 'Sistem yöneticisi',
         createdAt: new Date(),
@@ -13,15 +13,22 @@ module.exports = {
       },
       {
         id: 2,
+        name: 'warehouse_manager',
+        description: 'Depo Yöneticisi',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 3,
         name: 'user',
         description: 'Normal kullanıcı',
         createdAt: new Date(),
         updatedAt: new Date()
       }
-    ], {});
+    ]);
   },
 
-  async down(queryInterface, Sequelize) {
+  down: async (queryInterface, Sequelize) => {
     await queryInterface.bulkDelete('Roles', null, {});
   }
 };

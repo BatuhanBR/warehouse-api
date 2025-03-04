@@ -1,5 +1,4 @@
-const Location = require('../models/location');
-const Product = require('../models/Product');
+const { Product, Location } = require('../models');
 const logger = require('../config/logger');
 
 const locationController = {
@@ -162,6 +161,93 @@ const locationController = {
                 message: error.message
             });
         }
+    },
+
+    getLocations: async (req, res) => {
+        try {
+            console.log('getLocations çağrıldı');  // Debug log
+            const locations = await Location.findAll({
+                attributes: ['id', 'code', 'rackNumber', 'level', 'position']
+            });
+
+            console.log('Bulunan lokasyonlar:', locations); // Debug log
+
+            res.json({
+                success: true,
+                data: locations
+            });
+        } catch (error) {
+            console.error('Get locations error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Lokasyonlar yüklenirken bir hata oluştu'
+            });
+        }
+    },
+
+    // Belirli bir rafın lokasyonlarını getir
+    getRackLocations: async (req, res) => {
+        try {
+            const { rackNumber } = req.params;
+            console.log('Requested rack number:', rackNumber);
+
+            const locations = await Location.findAll({
+                where: { 
+                    rackNumber: parseInt(rackNumber)
+                },
+                include: [{
+                    model: Product,
+                    as: 'Product',
+                    required: false
+                }],
+                attributes: [
+                    'id', 'code', 'rackNumber', 'level', 
+                    'position', 'isOccupied', 'productId'
+                ]
+            });
+            
+            console.log('Found locations:', locations);
+            
+            res.json({
+                success: true,
+                data: locations || []
+            });
+        } catch (error) {
+            console.error('Raf lokasyonları getirme hatası:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Raf lokasyonları alınırken bir hata oluştu'
+            });
+        }
+    }
+};
+
+const calculateStorageUsage = async () => {
+    try {
+        const locations = await Location.findAll({
+            attributes: ['id', 'width', 'height', 'depth']
+        });
+
+        const products = await Product.findAll({
+            attributes: ['width', 'height', 'length', 'quantity', 'locationId']
+        });
+
+        // Toplam raf hacmi
+        const totalCapacity = locations.reduce((sum, loc) => 
+            sum + (loc.width * loc.height * loc.depth), 0);
+
+        // Kullanılan hacim
+        const usedCapacity = products.reduce((sum, prod) => 
+            sum + (prod.width * prod.height * prod.length * prod.quantity), 0);
+
+        return {
+            totalCapacity,
+            usedCapacity,
+            usagePercentage: (usedCapacity / totalCapacity) * 100
+        };
+    } catch (error) {
+        console.error('Storage usage calculation error:', error);
+        throw error;
     }
 };
 

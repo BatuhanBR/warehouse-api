@@ -159,6 +159,43 @@ const authController = {
                 message: 'Şifre sıfırlama işlemi sırasında bir hata oluştu'
             });
         }
+    },
+
+    me: async (req, res) => {
+        try {
+            const user = await User.findOne({
+                where: { id: req.user.id },
+                include: [{
+                    model: Role,
+                    as: 'role',
+                    attributes: ['name']
+                }],
+                attributes: ['id', 'email', 'username']
+            });
+            
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Kullanıcı bulunamadı'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    id: user.id,
+                    email: user.email,
+                    username: user.username,
+                    role: user.role.name
+                }
+            });
+        } catch (error) {
+            console.error('Get user error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Kullanıcı bilgileri alınırken bir hata oluştu'
+            });
+        }
     }
 };
 

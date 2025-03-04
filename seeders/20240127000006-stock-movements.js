@@ -2,8 +2,14 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
+    // Önce ürünleri ve lokasyonları alalım
     const products = await queryInterface.sequelize.query(
       'SELECT id, quantity FROM "Products";',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+
+    const locations = await queryInterface.sequelize.query(
+      'SELECT id FROM "Locations";',
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     );
 
@@ -37,26 +43,32 @@ module.exports = {
           if(currentStock >= quantity) {
             currentStock -= quantity;
           } else {
-            continue; // Stok yetersizse bu hareketi atla
+            continue;
           }
         }
 
+        // Rastgele bir lokasyon seç
+        const randomLocation = locations[Math.floor(Math.random() * locations.length)];
+
         movements.push({
           productId: product.id,
+          locationId: randomLocation.id, // Lokasyon ID'sini ekledik
           type,
           quantity,
           description: descriptions[Math.floor(Math.random() * descriptions.length)],
           previousStock,
           newStock: currentStock,
           createdBy: Math.floor(Math.random() * 3) + 1,
-          createdAt: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000), // Son 30 gün
-          updatedAt: new Date()
+          createdAt: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000),
+          updatedAt: new Date(),
+          movementDate: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000)
         });
       }
     });
 
     await queryInterface.bulkInsert('StockMovements', movements);
   },
+
   down: async (queryInterface, Sequelize) => {
     await queryInterface.bulkDelete('StockMovements', null, {});
   }

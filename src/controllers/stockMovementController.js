@@ -1,19 +1,37 @@
-const { StockMovement, Product, User } = require('../models');
-const { Op } = require('sequelize');
+const { StockMovement, Product, Location, User, Op } = require('../models');
 
 const stockMovementController = {
     // Tüm stok hareketlerini getir
     getStockMovements: async (req, res) => {
         try {
+            const { type, productId, locationId, startDate, endDate } = req.query;
+            const where = {};
+
+            if (type) where.type = type;
+            if (productId) where.productId = productId;
+            if (locationId) where.locationId = locationId;
+            if (startDate && endDate) {
+                where.createdAt = {
+                    [Op.between]: [new Date(startDate), new Date(endDate)]
+                };
+            }
+
             const movements = await StockMovement.findAll({
+                where,
                 include: [
                     {
                         model: Product,
-                        attributes: ['name', 'sku']
+                        as: 'Product',
+                        attributes: ['name']
+                    },
+                    {
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['code']
                     },
                     {
                         model: User,
-                        as: 'creator',
+                        as: 'Creator',
                         attributes: ['username']
                     }
                 ],
@@ -28,7 +46,7 @@ const stockMovementController = {
             console.error('Get stock movements error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Stok hareketleri alınırken bir hata oluştu'
+                message: 'Stok hareketleri yüklenirken bir hata oluştu!'
             });
         }
     },
@@ -47,24 +65,24 @@ const stockMovementController = {
                 });
             }
 
-            // Mevcut stok miktarını al
+            // Önceki stok miktarını kaydet
             const previousStock = product.quantity;
-            let newStock = previousStock;
 
             // Stok miktarını güncelle
+            let newStock;
             if (type === 'IN') {
-                newStock += quantity;
-            } else if (type === 'OUT') {
+                newStock = previousStock + quantity;
+            } else {
                 if (previousStock < quantity) {
                     return res.status(400).json({
                         success: false,
                         message: 'Yetersiz stok'
                     });
                 }
-                newStock -= quantity;
+                newStock = previousStock - quantity;
             }
 
-            // Stok hareketini oluştur
+            // Stok hareketini kaydet
             const movement = await StockMovement.create({
                 productId,
                 type,
@@ -80,13 +98,14 @@ const stockMovementController = {
 
             res.status(201).json({
                 success: true,
+                message: 'Stok hareketi başarıyla kaydedildi',
                 data: movement
             });
         } catch (error) {
             console.error('Create stock movement error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Stok hareketi oluşturulurken bir hata oluştu'
+                message: 'Stok hareketi kaydedilirken bir hata oluştu'
             });
         }
     },

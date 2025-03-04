@@ -1,38 +1,31 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 
-const auth = async (req, res, next) => {
+module.exports = async (req, res, next) => {
     try {
-        const token = req.header('Authorization')?.replace('Bearer ', '');
+        const token = req.headers.authorization?.split(' ')[1];
         
         if (!token) {
             return res.status(401).json({
                 success: false,
-                message: 'Yetkilendirme token\'ı bulunamadı'
+                message: 'Token bulunamadı'
             });
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findOne({
-            where: { id: decoded.id, isActive: true }
-        });
-
-        if (!user) {
-            throw new Error();
-        }
-
-        req.user = user;
-        req.token = token;
+        req.user = decoded;
+        
+        console.log('Decoded token:', decoded); // Debug için
+        
         next();
     } catch (error) {
+        console.error('Auth middleware error:', error);
         res.status(401).json({
             success: false,
-            message: 'Lütfen giriş yapın'
+            message: 'Geçersiz token'
         });
     }
 };
-
-module.exports = auth;
 
 // Admin kontrolü
 exports.restrictTo = (...roles) => {

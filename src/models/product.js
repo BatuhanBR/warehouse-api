@@ -36,7 +36,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),
-      defaultValue: 0
+      defaultValue: 0,
+      allowNull: true,
+      comment: 'Otomatik hesaplanan ürün fiyatı'
     },
     minStockLevel: {
       type: DataTypes.INTEGER,
@@ -130,7 +132,8 @@ module.exports = (sequelize, DataTypes) => {
       get() {
         return this.volumePerUnit * this.quantity;
       }
-    }
+    },
+    company: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Product',

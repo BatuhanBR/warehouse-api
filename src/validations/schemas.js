@@ -14,10 +14,6 @@ const schemas = {
                 .messages({
                     'string.pattern.base': 'SKU 5 rakamdan oluşmalıdır (Örnek: 12345)'
                 }),
-            price: Joi.number().min(0).required()
-                .messages({
-                    'number.min': 'Fiyat 0\'dan küçük olamaz'
-                }),
             quantity: Joi.number().integer().min(0)
                 .messages({
                     'number.min': 'Miktar 0\'dan küçük olamaz'
@@ -34,7 +30,6 @@ const schemas = {
         }),
         update: Joi.object({
             name: Joi.string().min(3).max(100),
-            price: Joi.number().min(0),
             quantity: Joi.number().integer().min(0),
             description: Joi.string().max(500),
             categoryId: Joi.number().integer(),

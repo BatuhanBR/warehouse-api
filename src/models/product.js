@@ -29,6 +29,27 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false
     },
+    weight: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      comment: 'Ürün ağırlığı (kg)'
+    },
+    sizeCategory: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const weight = this.weight || 0;
+        const volume = (this.width * this.height * this.depth) / 1000000; // m³ cinsinden
+
+        // Ağırlık ve hacme göre kategorizasyon
+        if (weight <= 10 && volume <= 0.5) {
+          return 'Küçük';
+        } else if (weight <= 50 && volume <= 2) {
+          return 'Normal';
+        } else {
+          return 'Büyük';
+        }
+      }
+    },
     quantity: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
@@ -105,19 +126,19 @@ module.exports = (sequelize, DataTypes) => {
     },
     width: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün genişliği (cm)'
     },
     height: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün yüksekliği (cm)'
     },
     length: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün uzunluğu (cm)'
     },

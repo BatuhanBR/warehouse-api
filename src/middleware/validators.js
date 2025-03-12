@@ -10,7 +10,9 @@ const validators = {
     // Product validators
     createProductValidator: [
         body('name').notEmpty().withMessage('Ürün adı gereklidir'),
-        body('sku').notEmpty().withMessage('SKU gereklidir'),
+        body('sku')
+            .notEmpty().withMessage('SKU gereklidir')
+            .matches(/^\d{2}-[A-Z]{5}$/).withMessage('SKU formatı "XX-YYYYY" şeklinde olmalıdır (Örnek: 12-ABCDE)'),
         body('price').isFloat({ min: 0 }).withMessage('Geçerli bir fiyat giriniz'),
         body('quantity').isInt({ min: 0 }).withMessage('Geçerli bir miktar giriniz'),
         body('categoryId').isInt().withMessage('Geçerli bir kategori seçiniz')

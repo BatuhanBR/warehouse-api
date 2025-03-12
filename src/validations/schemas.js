@@ -10,9 +10,9 @@ const schemas = {
                     'string.min': 'Ürün adı en az 3 karakter olmalıdır',
                     'string.max': 'Ürün adı en fazla 100 karakter olabilir'
                 }),
-            sku: Joi.string().pattern(/^\d{5}$/).required()
+            sku: Joi.string().pattern(/^\d{2}-[A-Z]{5}$/).required()
                 .messages({
-                    'string.pattern.base': 'SKU 5 rakamdan oluşmalıdır (Örnek: 12345)'
+                    'string.pattern.base': 'SKU 2 rakam ve 5 harften oluşmalıdır (Örnek: 12-ABCDE)'
                 }),
             quantity: Joi.number().integer().min(0)
                 .messages({

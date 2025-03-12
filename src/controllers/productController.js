@@ -12,6 +12,7 @@ const PRODUCT_ATTRIBUTES = [
     'categoryId', 'locationId', 'createdBy',
     'storageStartDate', 'expectedStorageDuration',
     'company', 'weight', 'sizeCategory',
+    'width', 'height', 'length', 'dailyStorageRate',
     'createdAt', 'updatedAt'
 ];
 
@@ -19,10 +20,7 @@ const productController = {
     getProducts: async (req, res) => {
         try {
             const products = await Product.findAll({
-                attributes: [
-                    ...PRODUCT_ATTRIBUTES,
-                    'company',
-                ],
+                attributes: PRODUCT_ATTRIBUTES,
                 include: [
                     {
                         model: Category,
@@ -38,9 +36,23 @@ const productController = {
                 order: [['createdAt', 'DESC']]
             });
 
+            // Ürün verilerini düzenle
+            const formattedProducts = products.map(product => {
+                const plainProduct = product.get({ plain: true });
+                return {
+                    ...plainProduct,
+                    width: parseFloat(plainProduct.width) || 0,
+                    height: parseFloat(plainProduct.height) || 0,
+                    length: parseFloat(plainProduct.length) || 0,
+                    weight: parseFloat(plainProduct.weight) || 0,
+                    price: parseFloat(plainProduct.price) || 0,
+                    dailyStorageRate: parseFloat(plainProduct.dailyStorageRate) || 0
+                };
+            });
+
             res.json({
                 success: true,
-                data: products.map(product => product.get({ plain: true }))
+                data: formattedProducts
             });
         } catch (error) {
             console.error('Get products error:', error);
@@ -87,6 +99,15 @@ const productController = {
         try {
             const userId = req.user.id;
 
+            // SKU formatını kontrol et
+            const skuFormat = /^\d{2}-[A-Z]{5}$/;
+            if (!skuFormat.test(req.body.sku.trim())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
+                });
+            }
+
             const productData = {
                 name: req.body.name.trim(),
                 description: req.body.description || '',
@@ -100,7 +121,12 @@ const productController = {
                 locationId: req.body.locationId || null,
                 createdBy: userId,
                 company: req.body.company || '',
-                weight: req.body.weight || 0,
+                weight: parseFloat(req.body.weight) || 0,
+                width: parseFloat(req.body.width) || 0,
+                height: parseFloat(req.body.height) || 0,
+                length: parseFloat(req.body.length) || 0,
+                dailyStorageRate: parseFloat(req.body.dailyStorageRate) || 0,
+                price: parseFloat(req.body.price) || 0,
                 sizeCategory: req.body.sizeCategory || ''
             };
 
@@ -135,6 +161,18 @@ const productController = {
         try {
             const { id } = req.params;
             
+            // SKU güncelleniyorsa formatını kontrol et
+            if (req.body.sku) {
+                const skuFormat = /^\d{2}-[A-Z]{5}$/;
+                if (!skuFormat.test(req.body.sku.trim())) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
+                    });
+                }
+            }
+
             // Önce ürünü bulalım
             const product = await Product.findByPk(id);
 
@@ -559,6 +597,7 @@ const productController = {
     getAllProducts: async (req, res) => {
         try {
             const products = await Product.findAll({
+                attributes: PRODUCT_ATTRIBUTES,
                 include: [
                     {
                         model: Category,
@@ -568,7 +607,8 @@ const productController = {
                         model: Location,
                         as: 'Location'
                     }
-                ]
+                ],
+                order: [['createdAt', 'DESC']]
             });
             res.json({ success: true, data: products });
         } catch (error) {

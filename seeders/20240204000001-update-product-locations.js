@@ -2,48 +2,72 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Önce tüm lokasyonları boşalt
-    await queryInterface.sequelize.query(
-      'UPDATE "Locations" SET "isOccupied" = false, "productId" = NULL;'
-    );
-
-    // Mevcut ürünleri al (maksimum 100 ürün)
-    const products = await queryInterface.sequelize.query(
-      'SELECT id FROM "Products" LIMIT 100;',
-      { type: queryInterface.sequelize.QueryTypes.SELECT }
-    );
-
-    // Her ürün için benzersiz bir lokasyon seç (1-100 arası)
-    const usedLocations = new Set();
-    const updates = [];
-
-    for (const product of products) {
-      let locationId;
-      do {
-        locationId = Math.floor(Math.random() * 100) + 1;
-      } while (usedLocations.has(locationId));
-
-      usedLocations.add(locationId);
-
-      updates.push(
-        queryInterface.sequelize.query(
-          `UPDATE "Products" SET "locationId" = ${locationId} WHERE id = ${product.id};`
-        ),
-        queryInterface.sequelize.query(
-          `UPDATE "Locations" SET "isOccupied" = true, "productId" = ${product.id} WHERE id = ${locationId};`
-        )
+    try {
+      // Önce tüm lokasyonları boşalt
+      await queryInterface.sequelize.query(
+        'UPDATE "Locations" SET "isOccupied" = false;'
       );
-    }
 
-    await Promise.all(updates);
+      // Mevcut lokasyonları al
+      const locations = await queryInterface.sequelize.query(
+        'SELECT id FROM "Locations" ORDER BY id;',
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+
+      if (locations.length === 0) {
+        console.log('Hiç lokasyon bulunamadı');
+        return;
+      }
+
+      // Mevcut ürünleri al
+      const products = await queryInterface.sequelize.query(
+        'SELECT id FROM "Products" ORDER BY RANDOM() LIMIT :limit;',
+        {
+          replacements: { limit: Math.floor(locations.length / 2) }, // Lokasyonların yarısı kadar ürün
+          type: Sequelize.QueryTypes.SELECT
+        }
+      );
+
+      // Rastgele seçilen ürünlere lokasyon ata
+      for (let i = 0; i < products.length; i++) {
+        await queryInterface.sequelize.query(
+          'UPDATE "Products" SET "locationId" = :locationId WHERE id = :productId;',
+          {
+            replacements: {
+              locationId: locations[i].id,
+              productId: products[i].id
+            },
+            type: Sequelize.QueryTypes.UPDATE
+          }
+        );
+
+        await queryInterface.sequelize.query(
+          'UPDATE "Locations" SET "isOccupied" = true WHERE id = :locationId;',
+          {
+            replacements: { locationId: locations[i].id },
+            type: Sequelize.QueryTypes.UPDATE
+          }
+        );
+      }
+
+      console.log(`${products.length} ürüne lokasyon atandı`);
+    } catch (error) {
+      console.error('Lokasyon güncelleme hatası:', error);
+      throw error;
+    }
   },
 
   async down(queryInterface, Sequelize) {
-    await queryInterface.sequelize.query(
-      'UPDATE "Products" SET "locationId" = NULL;'
-    );
-    await queryInterface.sequelize.query(
-      'UPDATE "Locations" SET "isOccupied" = false, "productId" = NULL;'
-    );
+    try {
+      await queryInterface.sequelize.query(
+        'UPDATE "Products" SET "locationId" = NULL;'
+      );
+      await queryInterface.sequelize.query(
+        'UPDATE "Locations" SET "isOccupied" = false;'
+      );
+    } catch (error) {
+      console.error('Down migration hatası:', error);
+      throw error;
+    }
   }
 }; 

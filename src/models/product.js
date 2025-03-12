@@ -27,7 +27,35 @@ module.exports = (sequelize, DataTypes) => {
     description: DataTypes.TEXT,
     sku: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      unique: true,
+      validate: {
+        is: {
+          args: /^\d{2}-[A-Z]{5}$/,
+          msg: 'SKU formatı "XX-YYYYY" şeklinde olmalıdır (2 sayı - 5 büyük harf)'
+        }
+      }
+    },
+    weight: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      comment: 'Ürün ağırlığı (kg)'
+    },
+    sizeCategory: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const weight = this.weight || 0;
+        const volume = (this.width * this.height * this.length); // cm³ cinsinden
+
+        // Ağırlık ve hacme göre kategorizasyon
+        if (weight <= 10 && volume <= 5000) {
+          return 'Küçük';
+        } else if (weight <= 50 && volume <= 50000) {
+          return 'Normal';
+        } else {
+          return 'Büyük';
+        }
+      }
     },
     quantity: {
       type: DataTypes.INTEGER,
@@ -105,26 +133,26 @@ module.exports = (sequelize, DataTypes) => {
     },
     width: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün genişliği (cm)'
     },
     height: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün yüksekliği (cm)'
     },
     length: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+      allowNull: true,
       defaultValue: 0,
       comment: 'Ürün uzunluğu (cm)'
     },
     volumePerUnit: {
       type: DataTypes.VIRTUAL,
       get() {
-        return (this.width * this.height * this.length) / 1000000; // m³ cinsinden
+        return (this.width * this.height * this.length); // cm³ cinsinden
       }
     },
     totalVolume: {

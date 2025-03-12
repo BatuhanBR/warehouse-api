@@ -44,17 +44,6 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false
     },
-    dimensions: {
-      type: DataTypes.JSON,
-      allowNull: false
-    },
-    volume: {
-      type: DataTypes.VIRTUAL,
-      get() {
-        const dim = this.dimensions;
-        return dim.width * dim.length * dim.height;
-      }
-    },
     isOccupied: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
@@ -87,9 +76,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     usedCapacity: {
       type: DataTypes.VIRTUAL,
-      async get() {
-        const products = await this.getProducts();
-        return products.reduce((total, product) => total + product.totalVolume, 0);
+      get() {
+        // Eğer bir ürün varsa ve isOccupied true ise kapasite dolu sayılır
+        return this.isOccupied ? this.totalCapacity : 0;
       }
     },
     availableCapacity: {

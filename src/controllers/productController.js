@@ -10,9 +10,9 @@ const PRODUCT_ATTRIBUTES = [
     'id', 'name', 'description', 'sku', 
     'quantity', 'price', 'minStockLevel', 'maxStockLevel',
     'categoryId', 'locationId', 'createdBy',
-    'width', 'height', 'length',
-    'dailyStorageRate', 'storageStartDate', 'expectedStorageDuration',
-    'company',
+    'storageStartDate', 'expectedStorageDuration',
+    'company', 'weight', 'sizeCategory',
+    'width', 'height', 'length', 'dailyStorageRate',
     'createdAt', 'updatedAt'
 ];
 
@@ -20,37 +20,7 @@ const productController = {
     getProducts: async (req, res) => {
         try {
             const products = await Product.findAll({
-                attributes: [
-                    ...PRODUCT_ATTRIBUTES,
-                    'company',
-                    [
-                        sequelize.literal(`COALESCE(("Product"."width" * "Product"."height" * "Product"."length") / 1000000.0, 0)`),
-                        'volumePerUnit'
-                    ],
-                    [
-                        sequelize.literal(`COALESCE(("Product"."width" * "Product"."height" * "Product"."length" * "Product"."quantity") / 1000000.0, 0)`),
-                        'totalVolume'
-                    ],
-                    [
-                        sequelize.literal(`
-                            CASE 
-                                WHEN "Product"."storageStartDate" IS NOT NULL AND "Product"."dailyStorageRate" IS NOT NULL THEN
-                                    CASE
-                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 180 THEN 
-                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.85
-                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 90 THEN 
-                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.90
-                                        WHEN DATE_PART('day', NOW() - "Product"."storageStartDate") > 30 THEN 
-                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate") * 0.95
-                                        ELSE 
-                                            COALESCE("Product"."dailyStorageRate", 0) * DATE_PART('day', NOW() - "Product"."storageStartDate")
-                                    END
-                                ELSE 0
-                            END
-                        `),
-                        'totalStorageCost'
-                    ]
-                ],
+                attributes: PRODUCT_ATTRIBUTES,
                 include: [
                     {
                         model: Category,
@@ -66,9 +36,23 @@ const productController = {
                 order: [['createdAt', 'DESC']]
             });
 
+            // Ürün verilerini düzenle
+            const formattedProducts = products.map(product => {
+                const plainProduct = product.get({ plain: true });
+                return {
+                    ...plainProduct,
+                    width: parseFloat(plainProduct.width) || 0,
+                    height: parseFloat(plainProduct.height) || 0,
+                    length: parseFloat(plainProduct.length) || 0,
+                    weight: parseFloat(plainProduct.weight) || 0,
+                    price: parseFloat(plainProduct.price) || 0,
+                    dailyStorageRate: parseFloat(plainProduct.dailyStorageRate) || 0
+                };
+            });
+
             res.json({
                 success: true,
-                data: products.map(product => product.get({ plain: true }))
+                data: formattedProducts
             });
         } catch (error) {
             console.error('Get products error:', error);
@@ -114,63 +98,36 @@ const productController = {
     createProduct: async (req, res) => {
         try {
             const userId = req.user.id;
-            
-            // Kategori bazlı günlük fiyat çarpanları
-            const categoryDailyRates = {
-                'Elektronik': 150,    // Elektronik ürünler için günlük 150₺
-                'Giyim': 80,         // Giyim için günlük 80₺
-                'Ev & Yaşam': 100,   // Ev & Yaşam için günlük 100₺
-                'Spor': 90,          // Spor malzemeleri için günlük 90₺
-                'Kitap': 50,         // Kitaplar için günlük 50₺
-                'Kozmetik': 120,     // Kozmetik için günlük 120₺
-                'Oyuncak': 70,       // Oyuncaklar için günlük 70₺
-                'Ofis': 60,          // Ofis malzemeleri için günlük 60₺
-                'Gıda': 200,         // Gıda ürünleri için günlük 200₺
-                'Bahçe': 110         // Bahçe ürünleri için günlük 110₺
-            };
 
-            // Kategoriyi bul
-            const category = await Category.findByPk(req.body.categoryId);
-            const dailyRate = categoryDailyRates[category?.name] || 100; // Varsayılan günlük ücret 100₺
-
-            // Beklenen depolama süresi (gün)
-            const expectedDuration = parseInt(req.body.expectedStorageDuration) || 30; // Minimum 30 gün
-
-            // Süreye göre indirim oranları
-            let discountRate = 1.0;
-            if (expectedDuration > 180) discountRate = 0.7;      // 6+ ay: %30 indirim
-            else if (expectedDuration > 90) discountRate = 0.8;  // 3+ ay: %20 indirim
-            else if (expectedDuration > 30) discountRate = 0.9;  // 1+ ay: %10 indirim
-
-            // Final fiyat hesaplama
-            const calculatedPrice = Math.max(dailyRate * expectedDuration * discountRate, 100);
-
-            // Depolama ücreti hesaplama (hacme göre)
-            const width = parseFloat(req.body.width) || 0;
-            const height = parseFloat(req.body.height) || 0;
-            const length = parseFloat(req.body.length) || 0;
-            const volumeInCubicMeters = (width * height * length) / 1000000;
-            const baseRate = 50;
-            const dailyStorageRate = Math.max(baseRate * volumeInCubicMeters, 50);
+            // SKU formatını kontrol et
+            const skuFormat = /^\d{2}-[A-Z]{5}$/;
+            if (!skuFormat.test(req.body.sku.trim())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
+                });
+            }
 
             const productData = {
                 name: req.body.name.trim(),
                 description: req.body.description || '',
                 sku: req.body.sku.trim(),
                 quantity: parseInt(req.body.quantity) || 0,
-                price: calculatedPrice, // Hesaplanan fiyat
                 minStockLevel: parseInt(req.body.minStockLevel) || 0,
                 maxStockLevel: parseInt(req.body.maxStockLevel) || 0,
-                width: width,
-                height: height,
-                length: length,
-                dailyStorageRate: dailyStorageRate,
                 storageStartDate: req.body.storageStartDate || null,
-                expectedStorageDuration: expectedDuration,
+                expectedStorageDuration: parseInt(req.body.expectedStorageDuration) || 30,
                 categoryId: parseInt(req.body.categoryId),
                 locationId: req.body.locationId || null,
                 createdBy: userId,
-                company: req.body.company || ''
+                company: req.body.company || '',
+                weight: parseFloat(req.body.weight) || 0,
+                width: parseFloat(req.body.width) || 0,
+                height: parseFloat(req.body.height) || 0,
+                length: parseFloat(req.body.length) || 0,
+                dailyStorageRate: parseFloat(req.body.dailyStorageRate) || 0,
+                price: parseFloat(req.body.price) || 0,
+                sizeCategory: req.body.sizeCategory || ''
             };
 
             const product = await Product.create(productData);
@@ -204,6 +161,18 @@ const productController = {
         try {
             const { id } = req.params;
             
+            // SKU güncelleniyorsa formatını kontrol et
+            if (req.body.sku) {
+                const skuFormat = /^\d{2}-[A-Z]{5}$/;
+                if (!skuFormat.test(req.body.sku.trim())) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
+                    });
+                }
+            }
+
             // Önce ürünü bulalım
             const product = await Product.findByPk(id);
 
@@ -225,7 +194,9 @@ const productController = {
                 minStockLevel: parseInt(req.body.minStock) || 0,
                 categoryId: parseInt(req.body.categoryId || req.body.category),
                 locationId: req.body.locationId || null,
-                company: req.body.company || ''
+                company: req.body.company || '',
+                weight: req.body.weight || 0,
+                sizeCategory: req.body.sizeCategory || ''
             };
 
             // Direkt SQL UPDATE sorgusu kullan
@@ -594,21 +565,18 @@ const productController = {
                     name: product.name,
                     sku: product.sku,
                     quantity: product.quantity,
-                    Category: product.Category,  // Tüm kategori bilgisini gönder
+                    Category: product.Category,
                     stock: product.quantity,
                     minStock: product.minStockLevel,
                     price: product.price || 0,
                     description: product.description || '',
                     locationId: product.locationId,
                     location: product.Location?.code || 'Belirtilmemiş',
-                    width: product.width,
-                    height: product.height,
-                    length: product.length,
-                    dailyStorageRate: product.dailyStorageRate || 0,
                     storageStartDate: product.storageStartDate,
                     expectedStorageDuration: product.expectedStorageDuration,
-                    totalStorageCost: product.totalStorageCost || 0,
-                    totalVolume: product.totalVolume || 0
+                    company: product.company || '',
+                    weight: product.weight || 0,
+                    sizeCategory: product.sizeCategory
                 }));
 
                 res.json({
@@ -629,6 +597,7 @@ const productController = {
     getAllProducts: async (req, res) => {
         try {
             const products = await Product.findAll({
+                attributes: PRODUCT_ATTRIBUTES,
                 include: [
                     {
                         model: Category,
@@ -638,7 +607,8 @@ const productController = {
                         model: Location,
                         as: 'Location'
                     }
-                ]
+                ],
+                order: [['createdAt', 'DESC']]
             });
             res.json({ success: true, data: products });
         } catch (error) {

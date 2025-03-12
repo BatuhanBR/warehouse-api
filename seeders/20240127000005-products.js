@@ -1,121 +1,226 @@
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const products = [];
+    try {
+      // Kategorileri al
     const categories = await queryInterface.sequelize.query(
-      'SELECT id, name FROM "Categories";',
-      { type: queryInterface.sequelize.QueryTypes.SELECT }
-    );
+        'SELECT id, name FROM "Categories"',
+        { 
+          type: Sequelize.QueryTypes.SELECT,
+          raw: true
+        }
+      );
 
-    // Kategori bazlı ürün şablonları ve boyutları
-    const productTemplates = {
-      'Elektronik': [
-        { base: 'Laptop', price: { min: 15000, max: 35000 }, dimensions: { width: 35, height: 3, depth: 25 } },
-        { base: 'Akıllı Telefon', price: { min: 8000, max: 25000 }, dimensions: { width: 15, height: 1, depth: 8 } },
-        { base: 'Tablet', price: { min: 5000, max: 20000 }, dimensions: { width: 25, height: 1, depth: 18 } },
-        { base: 'Kulaklık', price: { min: 500, max: 3000 }, dimensions: { width: 8, height: 8, depth: 4 } },
-        { base: 'Monitör', price: { min: 2500, max: 8000 }, dimensions: { width: 60, height: 40, depth: 10 } }
-      ],
-      'Mobilya': [
-        { base: 'Çalışma Masası', price: { min: 1500, max: 5000 }, dimensions: { width: 120, height: 75, depth: 60 } },
-        { base: 'Ofis Koltuğu', price: { min: 2000, max: 6000 }, dimensions: { width: 60, height: 110, depth: 60 } },
-        { base: 'Dolap', price: { min: 3000, max: 8000 }, dimensions: { width: 80, height: 180, depth: 40 } }
-      ],
-      'Kırtasiye': [
-        { base: 'Kalem Seti', price: { min: 50, max: 300 }, dimensions: { width: 20, height: 5, depth: 8 } },
-        { base: 'Defter', price: { min: 20, max: 100 }, dimensions: { width: 21, height: 30, depth: 2 } },
-        { base: 'Dosya', price: { min: 30, max: 150 }, dimensions: { width: 25, height: 35, depth: 3 } }
-      ]
-    };
+      if (!categories || categories.length === 0) {
+        console.log('Kategori bulunamadı');
+        return;
+      }
 
-    // Şirket isimleri listesi ekleyin (products.forEach üstüne)
-    const companyNames = [
-      'TechCorp',
-      'InnovateSolutions',
-      'GlobalTrade',
-      'SmartTech',
-      'FutureWorks',
-      'EliteCorp',
-      'PrimeTech',
-      'NextGen Industries',
-      'DigitalWave',
-      'MegaCorp',
-      'AlphaTech',
-      'OmegaSystems',
-      'PioneerTech',
-      'VisionaryTech',
-      'ApexCorp',
-      'InfinityTech',
-      'StarTech',
-      'UnityTrade',
-      'ProTech Solutions',
-      'BlueSky Industries',
-      'RedRock Technologies',
-      'GreenLeaf Corp',
-      'SilverLine Systems',
-      'GoldStar Tech',
-      'CrystalTech',
-      'PeakPerformance',
-      'SummitSolutions',
-      'ValleyTech',
-      'RiverFlow Systems',
-      'OceanWave Corp',
-      'MountainTop Tech',
-      'SunriseTech',
-      'SunsetSolutions',
-      'EagleTech',
-      'FalconSystems'
-    ];
+      const products = [];
+      const companies = ['Samsung', 'Apple', 'LG', 'Sony', 'Philips', 'Bosch', 'Vestel', 'Beko'];
+      const sizes = ['Küçük', 'Normal', 'Büyük'];
 
-    // Toplam 100 ürün için kategori başına ürün sayısını hesapla
-    const productsPerCategory = Math.floor(100 / categories.length); // Her kategoriye eşit dağıtım
-    const remainingProducts = 100 % categories.length; // Kalan ürünleri ilk kategorilere ekle
+      // Tarih aralıkları (son 1 yıl içinde)
+      const startDate = new Date();
+      startDate.setFullYear(startDate.getFullYear() - 1); // 1 yıl öncesi
+      const endDate = new Date(); // Şu an
 
-    categories.forEach((category, index) => {
-      const templates = productTemplates[category.name] || [
-        { base: 'Ürün', price: { min: 100, max: 1000 }, dimensions: { width: 30, height: 30, depth: 30 } }
-      ];
-      
-      // Her kategori için ürün sayısını belirle
-      const productCount = productsPerCategory + (index < remainingProducts ? 1 : 0);
-      
-      for (let i = 0; i < productCount; i++) {
-        const template = templates[Math.floor(Math.random() * templates.length)];
-        const modelNo = Math.floor(Math.random() * 999) + 1;
-        const variant = ['Pro', 'Plus', 'Lite', 'Max', 'Basic'][Math.floor(Math.random() * 5)];
-        const storageStartDate = new Date();
-        storageStartDate.setDate(storageStartDate.getDate() - Math.floor(Math.random() * 90));
+      // Depolama süre aralıkları (gün bazında)
+      const storageDurations = {
+        'Kısa': { min: 7, max: 30 },    // 1 hafta - 1 ay
+        'Orta': { min: 30, max: 90 },   // 1 ay - 3 ay
+        'Uzun': { min: 90, max: 365 }   // 3 ay - 1 yıl
+      };
+
+      // Kategori bazlı fiyat aralıkları
+      const categoryPrices = {
+        'Elektronik': { min: 1000, max: 10000 },
+        'Gıda': { min: 10, max: 500 },
+        'Kozmetik': { min: 50, max: 1000 },
+        'Kitap': { min: 20, max: 300 },
+        'Giyim': { min: 50, max: 2000 },
+        'Spor': { min: 100, max: 3000 },
+        'Ev & Yaşam': { min: 100, max: 5000 },
+        'Oyuncak': { min: 30, max: 800 },
+        'Ofis': { min: 20, max: 1000 },
+        'Bahçe': { min: 50, max: 2000 }
+      };
+
+      // Kategori bazlı günlük depolama ücretleri
+      const categoryStorageRates = {
+        'Elektronik': 100,    // Hassas ürünler
+        'Gıda': 150,         // Soğuk zincir gerektirir
+        'Kozmetik': 120,     // Sıcaklık kontrolü gerektirir
+        'Kitap': 50,         // Normal depolama
+        'Giyim': 70,         // Normal depolama
+        'Spor': 80,          // Normal depolama
+        'Ev & Yaşam': 90,    // Büyük ürünler
+        'Oyuncak': 60,       // Normal depolama
+        'Ofis': 70,          // Normal depolama
+        'Bahçe': 100         // Büyük ürünler
+      };
+
+      // Kategori bazlı boyut aralıkları (cm)
+      const categorySizes = {
+        'Elektronik': {
+          'Küçük': { width: [20, 35], height: [2, 5], length: [15, 25] },      // Tablet, küçük laptop
+          'Normal': { width: [35, 60], height: [3, 8], length: [25, 40] },     // Laptop, monitör
+          'Büyük': { width: [80, 150], height: [50, 90], length: [10, 20] }    // TV
+        },
+        'Gıda': {
+          'Küçük': { width: [10, 20], height: [15, 25], length: [10, 20] },    // Paketli gıdalar
+          'Normal': { width: [30, 50], height: [40, 60], length: [30, 50] },   // Koli
+          'Büyük': { width: [60, 100], height: [120, 180], length: [60, 100] } // Palet
+        },
+        'Kozmetik': {
+          'Küçük': { width: [5, 10], height: [10, 20], length: [5, 10] },      // Krem, parfüm
+          'Normal': { width: [20, 35], height: [25, 45], length: [20, 35] },   // Set kutuları
+          'Büyük': { width: [45, 70], height: [60, 90], length: [45, 70] }     // Toplu siparişler
+        },
+        'Kitap': {
+          'Küçük': { width: [15, 25], height: [2, 4], length: [20, 30] },      // Tekli kitap
+          'Normal': { width: [25, 40], height: [25, 35], length: [25, 40] },   // Kitap seti
+          'Büyük': { width: [45, 70], height: [35, 55], length: [45, 70] }     // Koli
+        },
+        'Ev & Yaşam': {
+          'Küçük': { width: [25, 45], height: [25, 45], length: [25, 45] },    // Küçük ev aletleri
+          'Normal': { width: [55, 85], height: [60, 110], length: [55, 85] },  // Elektrikli aletler
+          'Büyük': { width: [75, 120], height: [160, 220], length: [65, 100] } // Beyaz eşya
+        }
+      };
+
+      // Varsayılan boyut aralıkları (diğer kategoriler için)
+      const defaultSizes = {
+        'Küçük': { width: [15, 35], height: [15, 35], length: [15, 35] },
+        'Normal': { width: [35, 70], height: [35, 70], length: [35, 70] },
+        'Büyük': { width: [70, 120], height: [70, 120], length: [70, 120] }
+      };
+
+      // Her kategori için ürünler oluştur
+      categories.forEach(category => {
+        for (let i = 0; i < 5; i++) {
+          const size = sizes[Math.floor(Math.random() * sizes.length)];
+          
+          // Kategori için boyut aralıklarını al
+          const sizeRanges = (categorySizes[category.name] || defaultSizes)[size];
+          
+          // Boyutları hesapla
+          const getRandomDimension = (range) => {
+            return Number((Math.random() * (range[1] - range[0]) + range[0]).toFixed(2));
+          };
+
+          const width = getRandomDimension(sizeRanges.width);
+          const height = getRandomDimension(sizeRanges.height);
+          const length = getRandomDimension(sizeRanges.length);
+
+          const weight = size === 'Küçük' ? Math.random() * 5 : 
+                        size === 'Normal' ? Math.random() * 20 + 5 : 
+                        Math.random() * 50 + 20;
+          
+          const quantity = Math.floor(Math.random() * 50) + 1;
+          const company = companies[Math.floor(Math.random() * companies.length)];
+
+          // Rastgele başlangıç tarihi oluştur (son 1 yıl içinde)
+          const randomStartDate = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
+          
+          // Rastgele depolama süresi seç
+          const durationType = Math.random() < 0.3 ? 'Kısa' : Math.random() < 0.7 ? 'Orta' : 'Uzun';
+          const durationRange = storageDurations[durationType];
+          const expectedDuration = Math.floor(Math.random() * (durationRange.max - durationRange.min) + durationRange.min);
+
+          // Kategori için fiyat aralığını al
+          const priceRange = categoryPrices[category.name] || { min: 50, max: 1000 };
+          const price = Number((Math.random() * (priceRange.max - priceRange.min) + priceRange.min).toFixed(2));
+
+          // Kategori için günlük depolama ücretini al
+          const dailyStorageRate = categoryStorageRates[category.name] || 50;
 
         products.push({
-          name: `${template.base} ${variant} ${modelNo}`,
-          sku: `${category.id.toString().padStart(2, '0')}${i.toString().padStart(3, '0')}`,
-          description: `${template.base} ${variant} model ürün açıklaması`,
-          quantity: Math.floor(Math.random() * 200) + 1,
-          price: Math.floor(Math.random() * (template.price.max - template.price.min)) + template.price.min,
-          minStockLevel: Math.floor(Math.random() * 20) + 5,
-          maxStockLevel: Math.floor(Math.random() * 50) + 50,
-          width: template.dimensions.width,
-          height: template.dimensions.height,
-          length: template.dimensions.depth,
-          dailyStorageRate: Math.floor(Math.random() * 50) + 50,
-          storageStartDate: storageStartDate,
-          expectedStorageDuration: Math.floor(Math.random() * 180) + 30,
-          categoryId: category.id,
-          locationId: Math.floor(Math.random() * 100) + 1, // Sadece ilk 100 lokasyonu kullan
+            name: `${company} Ürün ${i + 1}`,
+            sku: `${category.id}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+            description: `${size} boyutlu ${company} ürünü - ${durationType} süreli depolama`,
+            quantity,
+            price,
+            dailyStorageRate,
+            minStockLevel: Math.max(5, Math.floor(quantity * 0.2)),
+            maxStockLevel: Math.floor(quantity * 2),
+            weight: Number(weight.toFixed(2)),
+            width,
+            height,
+            length,
+            categoryId: category.id,
+            locationId: null,
+            company,
+            storageStartDate: randomStartDate,
+            expectedStorageDuration: expectedDuration,
           createdBy: 1,
-          company: companyNames[Math.floor(Math.random() * companyNames.length)], // Rastgele bir şirket seç
-          createdAt: new Date(),
-          updatedAt: new Date()
+            createdAt: randomStartDate,
+            updatedAt: randomStartDate
         });
       }
     });
 
-    return queryInterface.bulkInsert('Products', products);
+      // Ürünleri ekle
+      await queryInterface.bulkInsert('Products', products);
+
+      // Boş lokasyonları al
+      const emptyLocations = await queryInterface.sequelize.query(
+        'SELECT id FROM "Locations" WHERE "isOccupied" = false LIMIT 50',
+        { 
+          type: Sequelize.QueryTypes.SELECT,
+          raw: true
+        }
+      );
+
+      // Yeni eklenen ürünleri al
+      const addedProducts = await queryInterface.sequelize.query(
+        'SELECT id FROM "Products" WHERE "locationId" IS NULL ORDER BY id DESC LIMIT 50',
+        { 
+          type: Sequelize.QueryTypes.SELECT,
+          raw: true
+        }
+      );
+
+      // Her bir boş lokasyon için bir ürün güncelle
+      for (let i = 0; i < Math.min(emptyLocations.length, addedProducts.length); i++) {
+        await queryInterface.sequelize.query(
+          'UPDATE "Products" SET "locationId" = :locationId WHERE id = :productId',
+          {
+            replacements: {
+              locationId: emptyLocations[i].id,
+              productId: addedProducts[i].id
+            },
+            type: Sequelize.QueryTypes.UPDATE
+          }
+        );
+
+        await queryInterface.sequelize.query(
+          'UPDATE "Locations" SET "isOccupied" = true WHERE id = :locationId',
+          {
+            replacements: { locationId: emptyLocations[i].id },
+            type: Sequelize.QueryTypes.UPDATE
+          }
+        );
+      }
+
+      console.log('Seed işlemi başarılı');
+    } catch (error) {
+      console.error('Seed hatası:', error);
+      throw error;
+    }
   },
 
   async down(queryInterface, Sequelize) {
-    return queryInterface.bulkDelete('Products', null, {});
+    try {
+      await queryInterface.bulkDelete('Products', null, {});
+      await queryInterface.sequelize.query(
+        'UPDATE "Locations" SET "isOccupied" = false',
+        { type: Sequelize.QueryTypes.UPDATE }
+      );
+    } catch (error) {
+      console.error('Down migration hatası:', error);
+      throw error;
+    }
   }
 }; 

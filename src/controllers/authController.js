@@ -62,7 +62,7 @@ const authController = {
         try {
             const { email, password } = req.body;
             console.log('Login attempt for:', email);
-            console.log('Attempted password:', password);
+            console.log('Attempted password length:', password.length);
 
             const user = await User.findOne({
                 where: { email },
@@ -73,13 +73,15 @@ const authController = {
             });
 
             if (!user) {
+                console.log('User not found:', email);
                 return res.status(401).json({
                     success: false,
                     message: 'Kullanıcı bulunamadı'
                 });
             }
 
-            console.log('Found user password hash:', user.password);
+            console.log('Found user:', user.email);
+            console.log('Stored password hash:', user.password);
             
             const isValidPassword = await bcrypt.compare(password, user.password);
             console.log('Password comparison result:', isValidPassword);
@@ -142,15 +144,12 @@ const authController = {
                 { expiresIn: '1h' }
             );
 
-            // Gerçek email gönderimi yerine console'a yazdıralım
-            console.log('Şifre sıfırlama linki:', `http://localhost:3001/reset-password?token=${resetToken}`);
-
-            // Normalde burası email gönderecek
-            // await emailService.sendPasswordResetEmail(user.email, resetToken);
+            // Email gönder
+            await emailService.sendPasswordResetEmail(email, resetToken);
 
             res.json({
                 success: true,
-                message: 'Şifre sıfırlama bağlantısı gönderildi'
+                message: 'Şifre sıfırlama bağlantısı email adresinize gönderildi'
             });
         } catch (error) {
             console.error('Şifre sıfırlama hatası:', error);
@@ -194,6 +193,61 @@ const authController = {
             res.status(500).json({
                 success: false,
                 message: 'Kullanıcı bilgileri alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    resetPassword: async (req, res) => {
+        try {
+            const { token, newPassword } = req.body;
+            console.log('Reset password attempt with token:', token);
+            console.log('New password length:', newPassword.length);
+
+            if (!token || !newPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Token ve yeni şifre gereklidir'
+                });
+            }
+
+            // Token'ı doğrula
+            let decoded;
+            try {
+                decoded = jwt.verify(token, process.env.JWT_SECRET);
+                console.log('Decoded token:', decoded);
+            } catch (error) {
+                console.error('Token doğrulama hatası:', error);
+                return res.status(401).json({
+                    success: false,
+                    message: 'Geçersiz veya süresi dolmuş token'
+                });
+            }
+
+            // Kullanıcıyı bul
+            const user = await User.findByPk(decoded.id);
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Kullanıcı bulunamadı'
+                });
+            }
+            console.log('Kullanıcı bulundu:', user.email);
+
+            // Yeni şifreyi set et ve kaydet
+            user.password = newPassword;
+            await user.save();
+            console.log('Şifre güncellendi');
+
+            res.json({
+                success: true,
+                message: 'Şifreniz başarıyla güncellendi'
+            });
+
+        } catch (error) {
+            console.error('Şifre sıfırlama hatası:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Şifre sıfırlama işlemi sırasında bir hata oluştu'
             });
         }
     }

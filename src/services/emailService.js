@@ -145,6 +145,49 @@ const emailService = {
             logger.error('Email gönderme hatası:', error);
             throw error;
         }
+    },
+
+    // Şifre sıfırlama emaili gönder
+    sendPasswordResetEmail: async (email, resetToken) => {
+        try {
+            const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/reset-password?token=${resetToken}`;
+            
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: email,
+                subject: 'Şifre Sıfırlama Talebi',
+                html: `
+                    <h2>Şifre Sıfırlama</h2>
+                    <p>Merhaba,</p>
+                    <p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>
+                    <p>
+                        <a href="${resetLink}" style="
+                            padding: 10px 20px;
+                            background-color: #1a56db;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            display: inline-block;
+                            margin: 20px 0;
+                        ">
+                            Şifremi Sıfırla
+                        </a>
+                    </p>
+                    <p>Bu bağlantı 1 saat süreyle geçerlidir.</p>
+                    <p>Eğer şifre sıfırlama talebinde bulunmadıysanız, bu emaili görmezden gelebilirsiniz.</p>
+                    <p>İyi günler,<br>Modern Depo Yönetim Sistemi</p>
+                `
+            });
+
+            logger.info('Password reset email sent', { email });
+            return true;
+        } catch (error) {
+            logger.error('Password reset email failed', {
+                error: error.message,
+                email
+            });
+            throw error;
+        }
     }
 };
 

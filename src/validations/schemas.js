@@ -103,6 +103,17 @@ const schemas = {
         }),
         forgotPassword: Joi.object({
             email: Joi.string().email().required()
+        }),
+        resetPassword: Joi.object({
+            token: Joi.string().required()
+                .messages({
+                    'string.empty': 'Token gereklidir'
+                }),
+            newPassword: Joi.string().min(6).required()
+                .messages({
+                    'string.empty': 'Yeni şifre gereklidir',
+                    'string.min': 'Yeni şifre en az 6 karakter olmalıdır'
+                })
         })
     }
 };

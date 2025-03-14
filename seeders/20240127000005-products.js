@@ -149,7 +149,7 @@ module.exports = {
             width,
             height,
             length,
-            categoryId: category.id,
+          categoryId: category.id,
             locationId: null,
             company,
             storageStartDate: randomStartDate,

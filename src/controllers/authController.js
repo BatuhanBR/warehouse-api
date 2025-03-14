@@ -62,7 +62,6 @@ const authController = {
         try {
             const { email, password } = req.body;
             console.log('Login attempt for:', email);
-            console.log('Attempted password length:', password.length);
 
             const user = await User.findOne({
                 where: { email },
@@ -81,7 +80,6 @@ const authController = {
             }
 
             console.log('Found user:', user.email);
-            console.log('Stored password hash:', user.password);
             
             const isValidPassword = await bcrypt.compare(password, user.password);
             console.log('Password comparison result:', isValidPassword);
@@ -92,6 +90,26 @@ const authController = {
                     message: 'Geçersiz şifre'
                 });
             }
+
+            // Son giriş tarihini güncelle
+            const currentDate = new Date();
+            console.log('Updating lastLoginAt to:', currentDate);
+            
+            await User.update(
+                { lastLoginAt: currentDate },
+                { where: { id: user.id } }
+            );
+
+            // Güncellenmiş kullanıcı bilgilerini al
+            const updatedUser = await User.findOne({
+                where: { id: user.id },
+                include: [{
+                    model: Role,
+                    as: 'role'
+                }]
+            });
+
+            console.log('Updated user lastLoginAt:', updatedUser.lastLoginAt);
 
             const token = jwt.sign(
                 { 
@@ -108,10 +126,11 @@ const authController = {
                 data: {
                     token,
                     user: {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        role: user.role.name
+                        id: updatedUser.id,
+                        username: updatedUser.username,
+                        email: updatedUser.email,
+                        role: updatedUser.role.name,
+                        lastLoginAt: updatedUser.lastLoginAt
                     }
                 }
             });

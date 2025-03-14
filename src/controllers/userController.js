@@ -30,7 +30,10 @@ const userController = {
                     as: 'role',
                     attributes: ['id', 'name']
                 }],
-                attributes: { exclude: ['password'] },
+                attributes: { 
+                    exclude: ['password'],
+                    include: ['lastLoginAt', 'isActive', 'email', 'username', 'id', 'createdAt', 'updatedAt']
+                },
                 order: [['createdAt', 'DESC']]
             });
 

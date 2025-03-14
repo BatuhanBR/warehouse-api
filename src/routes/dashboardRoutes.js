@@ -14,5 +14,6 @@ router.get('/predictions', auth, (req, res) => dashboardController.getPrediction
 router.get('/recent-movements', auth, dashboardController.getRecentMovements);
 router.get('/critical-stock', auth, dashboardController.getCriticalStock);
 router.get('/popular-products', auth, dashboardController.getPopularProducts);
+router.get('/product-stats', auth, dashboardController.getProductStats);
 
 module.exports = router;

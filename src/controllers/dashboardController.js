@@ -317,6 +317,46 @@ const dashboardController = {
                 message: 'Popüler ürünler alınırken bir hata oluştu'
             });
         }
+    },
+
+    getProductStats: async (req, res) => {
+        try {
+            // Min, max ve toplam değerleri al
+            const [statsResult] = await Product.sequelize.query(`
+                SELECT 
+                    MIN(price) as min_price,
+                    MAX(price) as max_price,
+                    MIN(quantity) as min_quantity,
+                    MAX(quantity) as max_quantity,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price) as median_price,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY quantity) as median_quantity
+                FROM "Products"
+            `);
+
+            const stats = statsResult[0];
+
+            res.json({
+                success: true,
+                data: {
+                    price: {
+                        min: parseFloat(stats.min_price || 0).toFixed(2),
+                        max: parseFloat(stats.max_price || 0).toFixed(2),
+                        median: parseFloat(stats.median_price || 0).toFixed(2)
+                    },
+                    quantity: {
+                        min: parseInt(stats.min_quantity || 0),
+                        max: parseInt(stats.max_quantity || 0),
+                        median: parseInt(stats.median_quantity || 0)
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Product stats error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Ürün istatistikleri alınırken bir hata oluştu'
+            });
+        }
     }
 };
 

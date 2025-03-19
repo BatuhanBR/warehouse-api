@@ -14,4 +14,7 @@ router.delete('/:id', auth, productController.deleteProduct);
 // Toplu silme endpoint'ini ekleyelim
 router.post('/bulk-delete', auth, productController.bulkDelete);
 
+// Excel export endpoint'i ekle
+router.get('/export-excel', auth, productController.exportToExcel);
+
 module.exports = router;

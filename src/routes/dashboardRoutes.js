@@ -15,5 +15,9 @@ router.get('/recent-movements', auth, dashboardController.getRecentMovements);
 router.get('/critical-stock', auth, dashboardController.getCriticalStock);
 router.get('/popular-products', auth, dashboardController.getPopularProducts);
 router.get('/product-stats', auth, dashboardController.getProductStats);
+router.get('/category-distribution', auth, dashboardController.getCategoryDistribution);
+router.get('/monthly-movements', auth, dashboardController.getMonthlyProductMovements);
+router.get('/total-stock-status', auth, dashboardController.getTotalStockStatus);
+router.get('/warehouse-occupancy', auth, dashboardController.getWarehouseOccupancy);
 
 module.exports = router;

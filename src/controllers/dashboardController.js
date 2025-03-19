@@ -357,6 +357,230 @@ const dashboardController = {
                 message: 'Ürün istatistikleri alınırken bir hata oluştu'
             });
         }
+    },
+
+    getCategoryDistribution: async (req, res) => {
+        try {
+            const distribution = await Product.findAll({
+                attributes: [
+                    [Sequelize.fn('COUNT', Sequelize.col('Product.id')), 'count']
+                ],
+                include: [{
+                    model: Category,
+                    as: 'Category',
+                    attributes: ['name']
+                }],
+                group: ['Category.id', 'Category.name'],
+                raw: true
+            });
+
+            const formattedData = distribution.map(item => ({
+                name: item['Category.name'],
+                value: parseInt(item.count)
+            }));
+
+            res.json({
+                success: true,
+                data: formattedData
+            });
+        } catch (error) {
+            console.error('Category distribution error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Kategori dağılımı alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getMonthlyProductMovements: async (req, res) => {
+        try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+
+            // Zaman aralığına göre başlangıç tarihini belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7); // Son 7 gün
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Bu ayın başı
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1); // Bu yılın başı
+                    break;
+            }
+
+            // Aylık giriş ve çıkışları al
+            const monthlyMovements = await StockMovement.findAll({
+                attributes: [
+                    [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'IN' THEN quantity ELSE 0 END")), 'incoming'],
+                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'OUT' THEN quantity ELSE 0 END")), 'outgoing'],
+                    [Sequelize.fn('COUNT', Sequelize.literal("CASE WHEN type = 'IN' THEN 1 END")), 'incomingCount'],
+                    [Sequelize.fn('COUNT', Sequelize.literal("CASE WHEN type = 'OUT' THEN 1 END")), 'outgoingCount']
+                ],
+                where: {
+                    createdAt: {
+                        [Op.gte]: startDate,
+                        [Op.lte]: now
+                    }
+                },
+                group: [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'ASC']],
+                raw: true
+            });
+
+            // Verileri formatla
+            const formattedData = monthlyMovements.map(item => {
+                const date = new Date(item.date);
+                return {
+                    date: timeRange === 'daily' 
+                        ? date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+                        : date.toLocaleDateString('tr-TR', { month: 'long' }),
+                    incoming: parseInt(item.incoming) || 0,
+                    outgoing: parseInt(item.outgoing) || 0,
+                    incomingCount: parseInt(item.incomingCount) || 0,
+                    outgoingCount: parseInt(item.outgoingCount) || 0,
+                    total: (parseInt(item.incoming) || 0) - (parseInt(item.outgoing) || 0)
+                };
+            });
+
+            res.json({
+                success: true,
+                data: formattedData
+            });
+        } catch (error) {
+            console.error('Monthly movements error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Aylık hareket verileri alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getTotalStockStatus: async (req, res) => {
+        try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+
+            // Zaman aralığına göre başlangıç tarihini belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7); // Son 7 gün
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Bu ayın başı
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1); // Bu yılın başı
+                    break;
+            }
+
+            // Toplam stok durumunu al
+            const stockStatus = await Product.findAll({
+                attributes: [
+                    [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalStock'],
+                    [Sequelize.fn('COUNT', Sequelize.col('id')), 'productCount']
+                ],
+                where: {
+                    createdAt: {
+                        [Op.gte]: startDate,
+                        [Op.lte]: now
+                    }
+                },
+                group: [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'ASC']],
+                raw: true
+            });
+
+            // Verileri formatla
+            const formattedData = stockStatus.map(item => {
+                const date = new Date(item.date);
+                return {
+                    date: timeRange === 'daily' 
+                        ? date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+                        : date.toLocaleDateString('tr-TR', { month: 'long' }),
+                    totalStock: parseInt(item.totalStock) || 0,
+                    productCount: parseInt(item.productCount) || 0
+                };
+            });
+
+            res.json({
+                success: true,
+                data: formattedData
+            });
+        } catch (error) {
+            console.error('Total stock status error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Toplam stok durumu alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getWarehouseOccupancy: async (req, res) => {
+        try {
+            const TOTAL_WAREHOUSE_AREA = 153.6; // Toplam depo alanı (m²)
+
+            // Tüm ürünlerin kapladığı toplam alanı hesapla
+            const products = await Product.findAll({
+                attributes: [
+                    'quantity',
+                    'width',
+                    'length'
+                ],
+                where: {
+                    width: { [Op.gt]: 0 },
+                    length: { [Op.gt]: 0 }
+                },
+                raw: true
+            });
+
+            // Her ürün için alan hesapla ve topla
+            let totalOccupiedArea = 0;
+            let totalQuantity = 0;
+
+            for (const product of products) {
+                const width = Math.abs(parseFloat(product.width || 0)) / 100; // cm to m
+                const length = Math.abs(parseFloat(product.length || 0)) / 100; // cm to m
+                const quantity = parseInt(product.quantity || 0);
+
+                if (width && length) {
+                    const areaPerUnit = width * length; // m² olarak alan
+                    // Her ürün için sadece bir adet alan hesapla
+                    totalOccupiedArea += areaPerUnit;
+                    totalQuantity += quantity;
+                }
+            }
+
+            // Değerleri kontrol et ve sınırla
+            const validOccupiedArea = Math.min(totalOccupiedArea, TOTAL_WAREHOUSE_AREA);
+            const availableArea = Math.max(0, TOTAL_WAREHOUSE_AREA - validOccupiedArea);
+            const occupancyRate = Math.min(100, (validOccupiedArea / TOTAL_WAREHOUSE_AREA) * 100);
+
+            res.json({
+                success: true,
+                data: {
+                    totalArea: TOTAL_WAREHOUSE_AREA,
+                    occupiedArea: parseFloat(validOccupiedArea.toFixed(2)),
+                    availableArea: parseFloat(availableArea.toFixed(2)),
+                    occupancyRate: parseFloat(occupancyRate.toFixed(2)),
+                    totalProducts: products.length,
+                    totalQuantity: totalQuantity
+                }
+            });
+        } catch (error) {
+            console.error('Warehouse occupancy error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Depo doluluk oranı hesaplanırken bir hata oluştu'
+            });
+        }
     }
 };
 

@@ -614,6 +614,117 @@ const productController = {
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
+    },
+
+    // Ürünleri Excel olarak dışa aktarma
+    exportToExcel: async (req, res) => {
+        try {
+            const Excel = require('exceljs');
+            
+            // Tüm ürünleri kategorileri ve lokasyonları ile birlikte al
+            const products = await Product.findAll({
+                include: [{
+                    model: Category,
+                    as: 'Category',
+                    attributes: ['name']
+                }, {
+                    model: Location,
+                    as: 'Location',
+                    attributes: ['code', 'rackNumber', 'level', 'position']
+                }],
+                order: [['createdAt', 'DESC']]
+            });
+            
+            // Excel dosyası oluştur
+            const workbook = new Excel.Workbook();
+            const worksheet = workbook.addWorksheet('Ürünler');
+            
+            // Sütun başlıklarını ekle
+            worksheet.columns = [
+                { header: 'ID', key: 'id', width: 10 },
+                { header: 'Ürün Adı', key: 'name', width: 30 },
+                { header: 'SKU', key: 'sku', width: 15 },
+                { header: 'Kategori', key: 'category', width: 20 },
+                { header: 'Lokasyon', key: 'location', width: 30 },
+                { header: 'Miktar', key: 'quantity', width: 10 },
+                { header: 'Fiyat (₺)', key: 'price', width: 15 },
+                { header: 'Min. Stok', key: 'minStockLevel', width: 10 },
+                { header: 'Genişlik (cm)', key: 'width', width: 15 },
+                { header: 'Uzunluk (cm)', key: 'length', width: 15 },
+                { header: 'Yükseklik (cm)', key: 'height', width: 15 },
+                { header: 'Ağırlık (kg)', key: 'weight', width: 15 },
+                { header: 'Açıklama', key: 'description', width: 40 },
+                { header: 'Şirket', key: 'company', width: 30 },
+                { header: 'Eklenme Tarihi', key: 'createdAt', width: 20 }
+            ];
+            
+            // Başlıkları kalın yap ve arka plan rengini ayarla
+            worksheet.getRow(1).font = { bold: true };
+            worksheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' }
+            };
+            
+            // Ürün verilerini ekle
+            products.forEach(product => {
+                // Lokasyon bilgisini formatla
+                const locationInfo = product.Location 
+                    ? `Raf ${product.Location.rackNumber}, Kat ${product.Location.level}, Poz. ${product.Location.position}`
+                    : 'Atanmamış';
+
+                worksheet.addRow({
+                    id: product.id,
+                    name: product.name,
+                    sku: product.sku,
+                    category: product.Category ? product.Category.name : '',
+                    location: locationInfo,
+                    quantity: product.quantity,
+                    price: product.price,
+                    minStockLevel: product.minStockLevel,
+                    width: product.width,
+                    length: product.length,
+                    height: product.height,
+                    weight: product.weight,
+                    description: product.description,
+                    company: product.company,
+                    createdAt: product.createdAt.toLocaleDateString('tr-TR')
+                });
+            });
+            
+            // Tüm hücrelere border ekle
+            worksheet.eachRow((row) => {
+                row.eachCell((cell) => {
+                    cell.border = {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+                });
+            });
+
+            // Sayısal değerleri sağa yasla
+            ['quantity', 'price', 'minStockLevel', 'width', 'length', 'height', 'weight'].forEach(key => {
+                worksheet.getColumn(key).alignment = { horizontal: 'right' };
+                worksheet.getColumn(key).numFmt = '0.00';
+            });
+            
+            // Excel dosyasını response olarak gönder
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', 'attachment; filename=urunler.xlsx');
+            
+            // Buffer olarak gönder
+            const buffer = await workbook.xlsx.writeBuffer();
+            res.send(buffer);
+            
+        } catch (error) {
+            console.error('Excel export error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Excel dosyası oluşturulurken bir hata oluştu'
+            });
+        }
     }
 };
 

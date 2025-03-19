@@ -191,6 +191,7 @@ const locationController = {
             const { rackNumber } = req.params;
             console.log('Requested rack number:', rackNumber);
 
+            // Lokasyonları getir
             const locations = await Location.findAll({
                 where: { 
                     rackNumber: parseInt(rackNumber)
@@ -202,15 +203,39 @@ const locationController = {
                 }],
                 attributes: [
                     'id', 'code', 'rackNumber', 'level', 
-                    'position', 'isOccupied', 'productId'
+                    'position', 'isOccupied', 'productId',
+                    'width', 'height', 'depth'
                 ]
             });
             
-            console.log('Found locations:', locations);
+            // Duplicate lokasyonları filtrele ve hücre durumlarını düzelt
+            const uniqueLocations = [];
+            const seenCodes = new Set();
+            
+            locations.forEach(location => {
+                const plainLocation = location.get({ plain: true });
+                
+                // Lokasyon kodunu kontrol et - tekrar eden locationları filtrele
+                if (!seenCodes.has(plainLocation.code)) {
+                    seenCodes.add(plainLocation.code);
+                    
+                    // İsOccupied ve Product durumunu kontrol et - tutarsızlıkları düzelt
+                    if (plainLocation.Product && plainLocation.Product.id) {
+                        plainLocation.isOccupied = true;
+                    } else {
+                        plainLocation.isOccupied = false;
+                        plainLocation.Product = null;
+                    }
+                    
+                    uniqueLocations.push(plainLocation);
+                }
+            });
+            
+            console.log(`Found ${uniqueLocations.length} unique locations for rack ${rackNumber}`);
             
             res.json({
                 success: true,
-                data: locations || []
+                data: uniqueLocations
             });
         } catch (error) {
             console.error('Raf lokasyonları getirme hatası:', error);

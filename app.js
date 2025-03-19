@@ -54,7 +54,8 @@ const importExportRoutes = require('./src/routes/importExportRoutes');
 const testRoutes = require('./src/routes/testRoutes');
 const stockMovementRoutes = require('./src/routes/stockMovementRoutes');
 const warehouseRoutes = require('./src/routes/warehouseRoutes');
-console.log('Warehouse routes loaded');
+const shelfRoutes = require('./src/routes/shelfRoutes');
+console.log('All routes loaded');
 
 // Ana route
 app.get('/', (req, res) => {
@@ -62,6 +63,8 @@ app.get('/', (req, res) => {
 });
 
 // Route'ları kullan
+console.log('Registering API routes:');
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
@@ -75,6 +78,18 @@ app.use('/api/import-export', importExportRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/warehouse', warehouseRoutes);
+app.use('/api/shelves', shelfRoutes);
+
+console.log('All API routes registered');
+
+// 404 handler - bilinen tüm rotaları kontrol ettikten sonra
+app.use((req, res, next) => {
+    console.log(`[404] Route not found: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({
+        success: false,
+        message: 'Endpoint bulunamadı'
+    });
+});
 
 // Error handler
 app.use((err, req, res, next) => {

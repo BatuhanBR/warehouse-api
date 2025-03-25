@@ -397,53 +397,79 @@ const dashboardController = {
             const { timeRange = 'monthly' } = req.query;
             const now = new Date();
             let startDate;
+            let dateFormat;
+            let dateGrouping;
 
-            // Zaman aralığına göre başlangıç tarihini belirle
+            // Zaman aralığına göre başlangıç tarihini ve format ayarlarını belirle
             switch (timeRange) {
                 case 'daily':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7); // Son 7 gün
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
                     break;
                 case 'weekly':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Bu ayın başı
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
                     break;
                 case 'monthly':
                 default:
-                    startDate = new Date(now.getFullYear(), 0, 1); // Bu yılın başı
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    dateFormat = { month: 'long' };
+                    dateGrouping = 'month';
                     break;
             }
 
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
             // Aylık giriş ve çıkışları al
-            const monthlyMovements = await StockMovement.findAll({
+            const movements = await StockMovement.findAll({
                 attributes: [
-                    [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'date'],
                     [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'IN' THEN quantity ELSE 0 END")), 'incoming'],
-                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'OUT' THEN quantity ELSE 0 END")), 'outgoing'],
-                    [Sequelize.fn('COUNT', Sequelize.literal("CASE WHEN type = 'IN' THEN 1 END")), 'incomingCount'],
-                    [Sequelize.fn('COUNT', Sequelize.literal("CASE WHEN type = 'OUT' THEN 1 END")), 'outgoingCount']
+                    [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN type = 'OUT' THEN quantity ELSE 0 END")), 'outgoing']
                 ],
                 where: {
                     createdAt: {
                         [Op.gte]: startDate,
-                        [Op.lte]: now
+                        [Op.lte]: endDate
                     }
                 },
-                group: [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt'))],
-                order: [[Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'ASC']],
+                group: [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'ASC']],
                 raw: true
             });
 
-            // Verileri formatla
-            const formattedData = monthlyMovements.map(item => {
-                const date = new Date(item.date);
+            // Tarih aralığındaki tüm günleri/ayları oluştur
+            let allDates = [];
+            let currentDate = new Date(startDate);
+            
+            while (currentDate <= endDate) {
+                allDates.push(new Date(currentDate));
+                if (dateGrouping === 'day') {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                } else {
+                    currentDate.setMonth(currentDate.getMonth() + 1);
+                }
+            }
+
+            // Tüm tarihler için veri hazırla
+            const formattedData = allDates.map(date => {
+                const matchingData = movements.find(m => {
+                    const movementDate = new Date(m.date);
+                    return dateGrouping === 'day' 
+                        ? movementDate.toDateString() === date.toDateString()
+                        : movementDate.getMonth() === date.getMonth() && 
+                          movementDate.getFullYear() === date.getFullYear();
+                });
+
                 return {
-                    date: timeRange === 'daily' 
-                        ? date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
-                        : date.toLocaleDateString('tr-TR', { month: 'long' }),
-                    incoming: parseInt(item.incoming) || 0,
-                    outgoing: parseInt(item.outgoing) || 0,
-                    incomingCount: parseInt(item.incomingCount) || 0,
-                    outgoingCount: parseInt(item.outgoingCount) || 0,
-                    total: (parseInt(item.incoming) || 0) - (parseInt(item.outgoing) || 0)
+                    date: date.toLocaleDateString('tr-TR', dateFormat),
+                    incoming: parseInt(matchingData?.incoming || 0),
+                    outgoing: parseInt(matchingData?.outgoing || 0),
+                    total: parseInt(matchingData?.incoming || 0) - parseInt(matchingData?.outgoing || 0)
                 };
             });
 
@@ -465,48 +491,139 @@ const dashboardController = {
             const { timeRange = 'monthly' } = req.query;
             const now = new Date();
             let startDate;
+            let dateFormat;
+            let dateGrouping;
 
-            // Zaman aralığına göre başlangıç tarihini belirle
+            // Zaman aralığına göre başlangıç tarihini ve format ayarlarını belirle
             switch (timeRange) {
                 case 'daily':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7); // Son 7 gün
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
                     break;
                 case 'weekly':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Bu ayın başı
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
                     break;
                 case 'monthly':
                 default:
-                    startDate = new Date(now.getFullYear(), 0, 1); // Bu yılın başı
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    dateFormat = { month: 'long' };
+                    dateGrouping = 'month';
                     break;
             }
 
-            // Toplam stok durumunu al
-            const stockStatus = await Product.findAll({
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            // Stok hareketlerinden günlük/aylık toplam değişimleri hesapla
+            const stockChanges = await StockMovement.findAll({
                 attributes: [
-                    [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'date'],
-                    [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalStock'],
-                    [Sequelize.fn('COUNT', Sequelize.col('id')), 'productCount']
+                    [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('SUM', 
+                        Sequelize.literal("CASE WHEN type = 'IN' THEN quantity WHEN type = 'OUT' THEN -quantity ELSE 0 END")
+                    ), 'change']
                 ],
                 where: {
                     createdAt: {
                         [Op.gte]: startDate,
-                        [Op.lte]: now
+                        [Op.lte]: endDate
                     }
                 },
-                group: [Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt'))],
-                order: [[Sequelize.fn('date_trunc', timeRange === 'daily' ? 'day' : 'month', Sequelize.col('createdAt')), 'ASC']],
+                group: [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'ASC']],
                 raw: true
             });
 
-            // Verileri formatla
-            const formattedData = stockStatus.map(item => {
-                const date = new Date(item.date);
+            // Başlangıç stok miktarını hesapla
+            const initialStock = await StockMovement.findAll({
+                attributes: [
+                    [Sequelize.fn('SUM', 
+                        Sequelize.literal("CASE WHEN type = 'IN' THEN quantity WHEN type = 'OUT' THEN -quantity ELSE 0 END")
+                    ), 'total']
+                ],
+                where: {
+                    createdAt: {
+                        [Op.lt]: startDate
+                    }
+                },
+                raw: true
+            });
+
+            // Her tarih için ürün sayısını hesapla
+            const productCounts = await Product.findAll({
+                attributes: [
+                    [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+                ],
+                where: {
+                    createdAt: {
+                        [Op.gte]: startDate,
+                        [Op.lte]: endDate
+                    }
+                },
+                group: [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt'))],
+                order: [[Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'ASC']],
+                raw: true
+            });
+
+            // Başlangıç ürün sayısını hesapla
+            const initialProductCount = await Product.count({
+                where: {
+                    createdAt: {
+                        [Op.lt]: startDate
+                    }
+                }
+            });
+
+            let runningTotal = parseInt(initialStock[0]?.total || 0);
+            let runningProductCount = initialProductCount;
+
+            // Tarih aralığındaki tüm günleri/ayları oluştur
+            let allDates = [];
+            let currentDate = new Date(startDate);
+            
+            while (currentDate <= endDate) {
+                allDates.push(new Date(currentDate));
+                if (dateGrouping === 'day') {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                } else {
+                    currentDate.setMonth(currentDate.getMonth() + 1);
+                }
+            }
+
+            // Tüm tarihler için veri hazırla
+            const formattedData = allDates.map(date => {
+                const matchingChange = stockChanges.find(change => {
+                    const changeDate = new Date(change.date);
+                    return dateGrouping === 'day'
+                        ? changeDate.toDateString() === date.toDateString()
+                        : changeDate.getMonth() === date.getMonth() &&
+                          changeDate.getFullYear() === date.getFullYear();
+                });
+
+                const matchingProductCount = productCounts.find(pc => {
+                    const countDate = new Date(pc.date);
+                    return dateGrouping === 'day'
+                        ? countDate.toDateString() === date.toDateString()
+                        : countDate.getMonth() === date.getMonth() &&
+                          countDate.getFullYear() === date.getFullYear();
+                });
+
+                if (matchingChange) {
+                    runningTotal += parseInt(matchingChange.change || 0);
+                }
+
+                if (matchingProductCount) {
+                    runningProductCount += parseInt(matchingProductCount.count || 0);
+                }
+
                 return {
-                    date: timeRange === 'daily' 
-                        ? date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
-                        : date.toLocaleDateString('tr-TR', { month: 'long' }),
-                    totalStock: parseInt(item.totalStock) || 0,
-                    productCount: parseInt(item.productCount) || 0
+                    date: date.toLocaleDateString('tr-TR', dateFormat),
+                    totalStock: runningTotal,
+                    productCount: runningProductCount
                 };
             });
 

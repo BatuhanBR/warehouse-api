@@ -96,6 +96,8 @@ const productController = {
     },
 
     createProduct: async (req, res) => {
+        const t = await sequelize.transaction();
+
         try {
             const userId = req.user.id;
 
@@ -130,15 +132,33 @@ const productController = {
                 sizeCategory: req.body.sizeCategory || ''
             };
 
-            const product = await Product.create(productData);
+            const product = await Product.create(productData, { transaction: t });
+
+            // İlk stok hareketi kaydını oluştur
+            if (productData.quantity > 0) {
+                await StockMovement.create({
+                    type: 'IN',
+                    quantity: productData.quantity,
+                    description: 'İlk stok girişi',
+                    productId: product.id,
+                    previousStock: 0,
+                    newStock: productData.quantity,
+                    createdBy: userId
+                }, { transaction: t });
+            }
 
             // Lokasyonu güncelle
             if (productData.locationId) {
                 await Location.update(
                     { isOccupied: true },
-                    { where: { id: productData.locationId } }
+                    { 
+                        where: { id: productData.locationId },
+                        transaction: t 
+                    }
                 );
             }
+
+            await t.commit();
 
             res.status(201).json({
                 success: true,
@@ -146,6 +166,7 @@ const productController = {
                 data: product
             });
         } catch (error) {
+            await t.rollback();
             console.error('Create product error:', error);
             res.status(400).json({
                 success: false,
@@ -245,15 +266,9 @@ const productController = {
         try {
             const { id } = req.params;
 
-            // Önce ürünün stok hareketlerini silelim
-            await StockMovement.destroy({
-                where: { productId: id },
-                transaction
-            });
-
-            // Sonra ürünü silelim
+            // Önce ürünü bulalım
             const product = await Product.findByPk(id, {
-                attributes: PRODUCT_ATTRIBUTES // Sadece var olan kolonları seç
+                attributes: PRODUCT_ATTRIBUTES
             });
 
             if (!product) {
@@ -264,7 +279,22 @@ const productController = {
                 });
             }
 
+            // Eğer ürünün stok miktarı 0'dan büyükse, stok çıkış hareketi oluştur
+            if (product.quantity > 0) {
+                await StockMovement.create({
+                    type: 'OUT',
+                    quantity: product.quantity,
+                    description: 'Ürün silindi',
+                    productId: product.id,
+                    previousStock: product.quantity,
+                    newStock: 0,
+                    createdBy: req.user.id
+                }, { transaction });
+            }
+
+            // Sonra ürünü silelim
             await product.destroy({ transaction });
+            
             await transaction.commit();
 
             res.json({
@@ -487,7 +517,31 @@ const productController = {
                 });
             }
 
-            // Önce bu ürünlere ait tüm stok hareketlerini silelim
+            // Önce ürünleri bulalım
+            const products = await Product.findAll({
+                where: {
+                    id: {
+                        [Op.in]: ids
+                    }
+                }
+            });
+
+            // Her ürün için stok çıkış hareketi oluştur
+            for (const product of products) {
+                if (product.quantity > 0) {
+                    await StockMovement.create({
+                        type: 'OUT',
+                        quantity: product.quantity,
+                        description: 'Ürün toplu silme işleminde silindi',
+                        productId: product.id,
+                        previousStock: product.quantity,
+                        newStock: 0,
+                        createdBy: req.user.id
+                    }, { transaction });
+                }
+            }
+
+            // Ürünlerin stok hareketlerini silelim
             await StockMovement.destroy({
                 where: {
                     productId: {

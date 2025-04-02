@@ -143,25 +143,77 @@ const dashboardController = {
 
     getRecentMovements: async (req, res) => {
         try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+
+            // Zaman aralığına göre başlangıç tarihini belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+            }
+
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
             const movements = await StockMovement.findAll({
+                where: {
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
                 limit: 10,
                 order: [['createdAt', 'DESC']],
                 include: [
                     {
                         model: Product,
-                        attributes: ['name', 'sku']
+                        as: 'Product',
+                        attributes: ['name', 'sku'],
+                        include: [{
+                            model: Category,
+                            as: 'Category',
+                            attributes: ['name']
+                        }]
+                    },
+                    {
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['code']
                     },
                     {
                         model: User,
-                        as: 'creator',
+                        as: 'Creator',
                         attributes: ['username']
                     }
                 ]
             });
 
+            const formattedMovements = movements.map(movement => ({
+                id: movement.id,
+                type: movement.type,
+                quantity: movement.quantity,
+                product: {
+                    name: movement.Product?.name || 'Bilinmeyen Ürün',
+                    sku: movement.Product?.sku || 'N/A',
+                    category: movement.Product?.Category?.name || 'Kategorisiz'
+                },
+                location: movement.Location?.code || 'Belirsiz',
+                creator: movement.Creator?.username || 'Bilinmeyen',
+                createdAt: movement.createdAt
+            }));
+
             res.json({
                 success: true,
-                data: movements
+                data: formattedMovements
             });
         } catch (error) {
             console.error('Recent movements error:', error);
@@ -361,10 +413,47 @@ const dashboardController = {
 
     getCategoryDistribution: async (req, res) => {
         try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+
+            // Zaman aralığına göre başlangıç tarihini belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'monthly':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+                case 'all':
+                    startDate = new Date(1970, 0, 1); // Çok eski bir tarih, tüm verileri kapsar
+                    break;
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+            }
+
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            const whereCondition = timeRange === 'all' 
+                ? {} 
+                : {
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                };
+
             const distribution = await Product.findAll({
                 attributes: [
-                    [Sequelize.fn('COUNT', Sequelize.col('Product.id')), 'count']
+                    [Sequelize.fn('COUNT', Sequelize.col('Product.id')), 'count'],
+                    [Sequelize.fn('SUM', Sequelize.literal('price * quantity')), 'totalValue']
                 ],
+                where: whereCondition,
                 include: [{
                     model: Category,
                     as: 'Category',
@@ -376,7 +465,8 @@ const dashboardController = {
 
             const formattedData = distribution.map(item => ({
                 name: item['Category.name'],
-                value: parseInt(item.count)
+                value: parseInt(item.count),
+                totalValue: parseFloat(item.totalValue) || 0
             }));
 
             res.json({
@@ -518,114 +608,35 @@ const dashboardController = {
             const endDate = new Date(now);
             endDate.setHours(23, 59, 59, 999);
 
-            // Stok hareketlerinden günlük/aylık toplam değişimleri hesapla
-            const stockChanges = await StockMovement.findAll({
-                attributes: [
-                    [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'date'],
-                    [Sequelize.fn('SUM', 
-                        Sequelize.literal("CASE WHEN type = 'IN' THEN quantity WHEN type = 'OUT' THEN -quantity ELSE 0 END")
-                    ), 'change']
-                ],
-                where: {
-                    createdAt: {
-                        [Op.gte]: startDate,
-                        [Op.lte]: endDate
-                    }
-                },
-                group: [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt'))],
-                order: [[Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'ASC']],
-                raw: true
+            // Her gün için toplam ürün miktarı ve palet sayısını al
+            const dailyStats = await Product.sequelize.query(`
+                WITH dates AS (
+                    SELECT date_trunc('${dateGrouping}', d)::date as stat_date
+                    FROM generate_series(
+                        :startDate::timestamp,
+                        :endDate::timestamp,
+                        '1 ${dateGrouping}'::interval
+                    ) d
+                )
+                SELECT 
+                    d.stat_date,
+                    COALESCE(SUM(p.quantity), 0) as total_quantity,
+                    COUNT(DISTINCT p.id) as pallet_count
+                FROM dates d
+                LEFT JOIN "Products" p ON date_trunc('${dateGrouping}', p."createdAt") <= d.stat_date
+                GROUP BY d.stat_date
+                ORDER BY d.stat_date ASC
+            `, {
+                replacements: { startDate, endDate },
+                type: Sequelize.QueryTypes.SELECT
             });
 
-            // Başlangıç stok miktarını hesapla
-            const initialStock = await StockMovement.findAll({
-                attributes: [
-                    [Sequelize.fn('SUM', 
-                        Sequelize.literal("CASE WHEN type = 'IN' THEN quantity WHEN type = 'OUT' THEN -quantity ELSE 0 END")
-                    ), 'total']
-                ],
-                where: {
-                    createdAt: {
-                        [Op.lt]: startDate
-                    }
-                },
-                raw: true
-            });
-
-            // Her tarih için ürün sayısını hesapla
-            const productCounts = await Product.findAll({
-                attributes: [
-                    [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'date'],
-                    [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
-                ],
-                where: {
-                    createdAt: {
-                        [Op.gte]: startDate,
-                        [Op.lte]: endDate
-                    }
-                },
-                group: [Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt'))],
-                order: [[Sequelize.fn('date_trunc', dateGrouping, Sequelize.col('createdAt')), 'ASC']],
-                raw: true
-            });
-
-            // Başlangıç ürün sayısını hesapla
-            const initialProductCount = await Product.count({
-                where: {
-                    createdAt: {
-                        [Op.lt]: startDate
-                    }
-                }
-            });
-
-            let runningTotal = parseInt(initialStock[0]?.total || 0);
-            let runningProductCount = initialProductCount;
-
-            // Tarih aralığındaki tüm günleri/ayları oluştur
-            let allDates = [];
-            let currentDate = new Date(startDate);
-            
-            while (currentDate <= endDate) {
-                allDates.push(new Date(currentDate));
-                if (dateGrouping === 'day') {
-                    currentDate.setDate(currentDate.getDate() + 1);
-                } else {
-                    currentDate.setMonth(currentDate.getMonth() + 1);
-                }
-            }
-
-            // Tüm tarihler için veri hazırla
-            const formattedData = allDates.map(date => {
-                const matchingChange = stockChanges.find(change => {
-                    const changeDate = new Date(change.date);
-                    return dateGrouping === 'day'
-                        ? changeDate.toDateString() === date.toDateString()
-                        : changeDate.getMonth() === date.getMonth() &&
-                          changeDate.getFullYear() === date.getFullYear();
-                });
-
-                const matchingProductCount = productCounts.find(pc => {
-                    const countDate = new Date(pc.date);
-                    return dateGrouping === 'day'
-                        ? countDate.toDateString() === date.toDateString()
-                        : countDate.getMonth() === date.getMonth() &&
-                          countDate.getFullYear() === date.getFullYear();
-                });
-
-                if (matchingChange) {
-                    runningTotal += parseInt(matchingChange.change || 0);
-                }
-
-                if (matchingProductCount) {
-                    runningProductCount += parseInt(matchingProductCount.count || 0);
-                }
-
-                return {
-                    date: date.toLocaleDateString('tr-TR', dateFormat),
-                    totalStock: runningTotal,
-                    productCount: runningProductCount
-                };
-            });
+            // Verileri formatla
+            const formattedData = dailyStats.map(stat => ({
+                date: new Date(stat.stat_date).toLocaleDateString('tr-TR', dateFormat),
+                totalStock: parseInt(stat.total_quantity),
+                palletCount: parseInt(stat.pallet_count)
+            }));
 
             res.json({
                 success: true,
@@ -696,6 +707,222 @@ const dashboardController = {
             res.status(500).json({
                 success: false,
                 message: 'Depo doluluk oranı hesaplanırken bir hata oluştu'
+            });
+        }
+    },
+
+    getTopValuedProducts: async (req, res) => {
+        try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+
+            // Zaman aralığına göre başlangıç tarihini belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+            }
+
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            // En değerli 5 ürünü al
+            const topProducts = await Product.findAll({
+                where: {
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    },
+                    price: {
+                        [Op.gt]: 0
+                    }
+                },
+                attributes: [
+                    'id', 'name', 'sku', 'quantity', 'price',
+                    [Sequelize.literal('price * quantity'), 'totalValue']
+                ],
+                include: [
+                    {
+                        model: Category,
+                        as: 'Category',
+                        attributes: ['name']
+                    },
+                    {
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['code']
+                    }
+                ],
+                order: [[Sequelize.literal('price * quantity'), 'DESC']],
+                limit: 5
+            });
+
+            const formattedProducts = topProducts.map(product => {
+                const plainProduct = product.get({ plain: true });
+                return {
+                    ...plainProduct,
+                    totalValue: parseFloat(product.dataValues.totalValue) || 0,
+                    categoryName: plainProduct.Category?.name || 'Kategorisiz',
+                    locationCode: plainProduct.Location?.code || 'Belirsiz'
+                };
+            });
+
+            res.json({
+                success: true,
+                data: formattedProducts
+            });
+        } catch (error) {
+            console.error('Top valued products error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'En değerli ürünler alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getLowStockProducts: async (req, res) => {
+        try {
+            const lowStockProducts = await Product.findAll({
+                where: {
+                    quantity: {
+                        [Op.lte]: Sequelize.col('minStockLevel')
+                    }
+                },
+                attributes: [
+                    'id',
+                    'name',
+                    'sku',
+                    'quantity',
+                    'minStockLevel',
+                    'sizeCategory'
+                ],
+                include: [{
+                    model: Category,
+                    as: 'Category',
+                    attributes: ['name']
+                }, {
+                    model: Location,
+                    as: 'Location',
+                    attributes: ['code', 'level', 'position']
+                }]
+            });
+
+            res.json({
+                success: true,
+                data: lowStockProducts
+            });
+        } catch (error) {
+            console.error('Low stock products error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Düşük stoklu ürünler alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    getDailyMovementDetails: async (req, res) => {
+        try {
+            const { date } = req.query;
+            
+            if (!date) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Tarih parametresi gerekli'
+                });
+            }
+
+            console.log('Received date:', date); // Debug log
+
+            // Tarih formatını kontrol et ve düzelt
+            const startDate = new Date(date);
+            if (isNaN(startDate.getTime())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Geçersiz tarih formatı'
+                });
+            }
+
+            // Tarihi UTC'ye çevir ve gün başlangıcına ayarla
+            startDate.setUTCHours(0, 0, 0, 0);
+            
+            const endDate = new Date(startDate);
+            endDate.setUTCHours(23, 59, 59, 999);
+
+            console.log('Searching movements between:', startDate.toISOString(), 'and', endDate.toISOString()); // Debug log
+
+            const movements = await StockMovement.findAll({
+                where: {
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                include: [
+                    {
+                        model: Product,
+                        as: 'Product',
+                        attributes: ['name', 'sku'],
+                        include: [{
+                            model: Category,
+                            as: 'Category',
+                            attributes: ['name']
+                        }]
+                    },
+                    {
+                        model: Location,
+                        as: 'Location',
+                        attributes: ['code', 'level', 'position']
+                    },
+                    {
+                        model: User,
+                        as: 'Creator',
+                        attributes: ['username']
+                    }
+                ],
+                order: [['createdAt', 'ASC']]
+            });
+
+            console.log('Found movements:', movements.length, 'for date:', date); // Debug log
+
+            // Hareketleri formatlayarak gönder
+            const formattedMovements = movements.map(movement => ({
+                id: movement.id,
+                type: movement.type,
+                quantity: movement.quantity,
+                product: {
+                    name: movement.Product?.name || 'Bilinmeyen Ürün',
+                    sku: movement.Product?.sku || 'N/A',
+                    category: movement.Product?.Category?.name || 'Kategorisiz'
+                },
+                location: movement.Location?.code || 'Belirsiz',
+                creator: movement.Creator?.username || 'Bilinmeyen',
+                createdAt: movement.createdAt
+            }));
+
+            res.json({
+                success: true,
+                data: formattedMovements,
+                debug: {
+                    requestedDate: date,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    movementCount: movements.length,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                }
+            });
+        } catch (error) {
+            console.error('Daily movement details error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Günlük hareket detayları alınırken bir hata oluştu',
+                error: error.message
             });
         }
     }

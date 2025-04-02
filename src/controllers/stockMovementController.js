@@ -7,14 +7,32 @@ const stockMovementController = {
             const { type, productId, locationId, startDate, endDate } = req.query;
             const where = {};
 
-            if (type) where.type = type;
-            if (productId) where.productId = productId;
-            if (locationId) where.locationId = locationId;
+            // Tip filtresi (IN/OUT)
+            if (type && type !== 'all') {
+                where.type = type.toUpperCase();
+            }
+
+            // Ürün filtresi
+            if (productId && productId !== 'all') {
+                where.productId = productId;
+            }
+
+            // Lokasyon filtresi
+            if (locationId && locationId !== 'all') {
+                where.locationId = locationId;
+            }
+
+            // Tarih aralığı filtresi
             if (startDate && endDate) {
                 where.createdAt = {
-                    [Op.between]: [new Date(startDate), new Date(endDate)]
+                    [Op.between]: [
+                        new Date(startDate + 'T00:00:00Z'),
+                        new Date(endDate + 'T23:59:59Z')
+                    ]
                 };
             }
+
+            console.log('Query where clause:', where); // Debug için
 
             const movements = await StockMovement.findAll({
                 where,
@@ -27,7 +45,7 @@ const stockMovementController = {
                     {
                         model: Location,
                         as: 'Location',
-                        attributes: ['code']
+                        attributes: ['code', 'rackNumber', 'level']
                     },
                     {
                         model: User,
@@ -37,6 +55,8 @@ const stockMovementController = {
                 ],
                 order: [['createdAt', 'DESC']]
             });
+
+            console.log(`Found ${movements.length} movements`); // Debug için
 
             res.json({
                 success: true,

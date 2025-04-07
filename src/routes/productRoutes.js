@@ -7,6 +7,7 @@ const { product: productSchema } = require('../validations/schemas');
 
 // Temel CRUD route'ları
 router.get('/', auth, productController.getProducts);
+router.get('/:id', auth, productController.getProductById);
 router.post('/', auth, validateRequest(productSchema.create), productController.createProduct);
 router.put('/:id', auth, validateRequest(productSchema.update), productController.updateProduct);
 router.delete('/:id', auth, productController.deleteProduct);

@@ -1,5 +1,6 @@
 const { Product, Location } = require('../models');
 const logger = require('../config/logger');
+const db = require('../models');
 
 const locationController = {
     // Tüm lokasyonları getir
@@ -242,6 +243,249 @@ const locationController = {
             res.status(500).json({
                 success: false,
                 message: 'Raf lokasyonları alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    // Tüm rafları getir (benzersiz raf numaralarını)
+    getRacks: async (req, res) => {
+        try {
+            console.log('Getting racks from Locations table');
+            
+            // Locations tablosundan benzersiz raf numaralarını getir
+            const racks = await db.sequelize.query(`
+                SELECT 
+                    "rackNumber",
+                    COUNT(*) as "totalCells",
+                    SUM(CASE WHEN "isOccupied" = true THEN 1 ELSE 0 END) as "occupiedCells",
+                    MIN("code") as "rackCode"
+                FROM "Locations"
+                GROUP BY "rackNumber"
+                ORDER BY "rackNumber" ASC
+            `, { type: db.sequelize.QueryTypes.SELECT });
+            
+            console.log(`Retrieved ${racks.length} racks`);
+            
+            // Her raf için id oluştur (frontend'in beklediği formata uygun olması için)
+            const formattedRacks = racks.map((rack, index) => ({
+                id: index + 1,
+                position: rack.rackNumber,
+                name: `Raf ${rack.rackNumber}`,
+                totalCells: parseInt(rack.totalCells),
+                occupiedCells: parseInt(rack.occupiedCells),
+                availableCells: parseInt(rack.totalCells) - parseInt(rack.occupiedCells),
+                rackCode: rack.rackCode
+            }));
+
+            res.json({
+                success: true,
+                data: formattedRacks
+            });
+        } catch (error) {
+            console.error('Get racks error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Raflar yüklenirken bir hata oluştu'
+            });
+        }
+    },
+
+    // Belirli bir rafın hücrelerini getir
+    getRackCells: async (req, res) => {
+        try {
+            const { rackNumber } = req.params;
+            console.log(`Getting cells for rack ${rackNumber} from Locations table`);
+            
+            // Belirli raf numarasına sahip tüm hücreleri getir
+            const cells = await db.Location.findAll({
+                where: { rackNumber: parseInt(rackNumber) },
+                attributes: [
+                    'id',
+                    'code',
+                    'level',
+                    'position',
+                    'isOccupied',
+                    'productId',
+                    'availableCapacity', // Eğer bu alan yoksa SQL tarafında hesaplanabilir
+                    'width',
+                    'height',
+                    'depth'
+                ],
+                order: [
+                    ['level', 'ASC'],
+                    ['position', 'ASC']
+                ]
+            });
+            
+            console.log(`Retrieved ${cells.length} cells for rack ${rackNumber}`);
+            
+            // Her hücre için frontend'in beklediği şekilde availableCapacity ekleyelim
+            const formattedCells = cells.map(cell => {
+                const plainCell = cell.get({ plain: true });
+                // Eğer availableCapacity alanı yoksa, isOccupied durumuna göre belirle
+                if (plainCell.availableCapacity === undefined) {
+                    plainCell.availableCapacity = plainCell.isOccupied ? 0 : 4; // Varsayılan kapasite 4
+                }
+                return plainCell;
+            });
+
+            res.json({
+                success: true,
+                data: formattedCells
+            });
+        } catch (error) {
+            console.error('Get rack cells error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Raf hücreleri yüklenirken bir hata oluştu'
+            });
+        }
+    },
+
+    // Konum kodu ile lokasyonu getir
+    getLocationByCode: async (req, res) => {
+        try {
+            const { code } = req.params;
+            
+            const location = await Location.findOne({
+                where: { code },
+                attributes: ['id', 'code', 'rackNumber', 'level', 'position', 'isOccupied', 'productId', 'width', 'height', 'depth', 'createdAt', 'updatedAt'],
+                include: [{
+                    model: Product,
+                    as: 'Product',
+                    required: false
+                }]
+            });
+
+            if (!location) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Lokasyon bulunamadı'
+                });
+            }
+
+            // Lokasyon verisini düzenle
+            const plainLocation = location.get({ plain: true });
+            if (plainLocation.Product && plainLocation.Product.id) {
+                plainLocation.isOccupied = true;
+            } else {
+                plainLocation.isOccupied = false;
+                plainLocation.Product = null;
+            }
+
+            res.json({
+                success: true,
+                data: plainLocation
+            });
+        } catch (error) {
+            console.error('Lokasyon getirme hatası:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Lokasyon alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    // Lokasyon güncelleme (ürün ekleme/çıkarma)
+    updateLocation: async (req, res) => {
+        const transaction = await db.sequelize.transaction();
+        
+        try {
+            const { code, productId, isOccupied } = req.body;
+            
+            // Lokasyonu bul - sadece mevcut kolonları seç
+            const location = await Location.findOne({
+                where: { code },
+                attributes: ['id', 'code', 'rackNumber', 'level', 'position', 'isOccupied', 'productId', 'width', 'height', 'depth', 'createdAt', 'updatedAt'],
+                transaction
+            });
+
+            if (!location) {
+                await transaction.rollback();
+                return res.status(404).json({
+                    success: false,
+                    message: 'Lokasyon bulunamadı'
+                });
+            }
+
+            // Eğer ürün eklenmek isteniyorsa
+            if (isOccupied && productId) {
+                // Ürünü bul
+                const product = await Product.findByPk(productId, { transaction });
+                
+                if (!product) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Ürün bulunamadı'
+                    });
+                }
+
+                // Eğer lokasyonda başka bir ürün varsa
+                if (location.isOccupied && location.productId && location.productId !== productId) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Bu lokasyonda başka bir ürün bulunuyor'
+                    });
+                }
+
+                // Lokasyonu güncelle
+                await location.update({
+                    productId,
+                    isOccupied: true
+                }, { transaction });
+                
+                // Ürünü güncelle (lokasyon bilgisi ekle)
+                await product.update({
+                    locationId: location.id
+                }, { transaction });
+            } 
+            // Ürün çıkarılmak isteniyorsa
+            else {
+                // Eğer lokasyonda bir ürün varsa
+                if (location.productId) {
+                    // Ürünü bul
+                    const product = await Product.findByPk(location.productId, { transaction });
+                    
+                    if (product) {
+                        // Ürünün lokasyon bağlantısını kaldır
+                        await product.update({
+                            locationId: null
+                        }, { transaction });
+                    }
+                }
+                
+                // Lokasyonu güncelle
+                await location.update({
+                    productId: null,
+                    isOccupied: false
+                }, { transaction });
+            }
+
+            await transaction.commit();
+            
+            // Güncellenmiş lokasyonu getir - sadece mevcut kolonları seç
+            const updatedLocation = await Location.findByPk(location.id, {
+                attributes: ['id', 'code', 'rackNumber', 'level', 'position', 'isOccupied', 'productId', 'width', 'height', 'depth', 'createdAt', 'updatedAt'],
+                include: [{
+                    model: Product,
+                    as: 'Product',
+                    required: false
+                }]
+            });
+            
+            res.json({
+                success: true,
+                message: isOccupied ? 'Ürün başarıyla yerleştirildi' : 'Ürün başarıyla kaldırıldı',
+                data: updatedLocation
+            });
+        } catch (error) {
+            await transaction.rollback();
+            console.error('Lokasyon güncelleme hatası:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Lokasyon güncellenirken bir hata oluştu'
             });
         }
     }

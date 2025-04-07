@@ -55,6 +55,7 @@ const testRoutes = require('./src/routes/testRoutes');
 const stockMovementRoutes = require('./src/routes/stockMovementRoutes');
 const warehouseRoutes = require('./src/routes/warehouseRoutes');
 const shelfRoutes = require('./src/routes/shelfRoutes');
+const expenseRoutes = require('./src/routes/expenseRoutes');
 console.log('All routes loaded');
 
 // Ana route
@@ -79,6 +80,7 @@ app.use('/api/test', testRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/warehouse', warehouseRoutes);
 app.use('/api/shelves', shelfRoutes);
+app.use('/api/expenses', expenseRoutes);
 
 console.log('All API routes registered');
 

@@ -925,6 +925,447 @@ const dashboardController = {
                 error: error.message
             });
         }
+    },
+
+    // Gider verilerini dashboard için getir
+    getExpenseSummary: async (req, res) => {
+        try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+            let dateFormat;
+            let dateGrouping;
+
+            // Zaman aralığına göre başlangıç tarihini ve format ayarlarını belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    dateFormat = { month: 'long' };
+                    dateGrouping = 'month';
+                    break;
+            }
+
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            // Expense modelini doğrudan require ile alalım
+            const { Expense } = require('../models');
+            
+            // TÜM giderleri getir - zaman filtresini kaldırdık
+            const expenses = await Expense.findAll({
+                order: [['expenseStartTime', 'DESC']]
+            });
+
+            // Sadece zaman aralığındaki giderleri de alalım (grafikler için)
+            const timeFilteredExpenses = await Expense.findAll({
+                where: {
+                    expenseStartTime: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                order: [['expenseStartTime', 'DESC']]
+            });
+
+            // Tüm zamanların toplam giderini hesapla
+            const allTimeExpense = expenses.reduce((sum, expense) => sum + Number(expense.expenseAmount), 0);
+            
+            // 2025 ve sonrası için giderleri filtrele
+            const currentYearExpenses = expenses.filter(expense => {
+                const startDate = new Date(expense.expenseStartTime);
+                return startDate.getFullYear() >= 2025;
+            });
+            
+            // 2025 ve sonrası için toplam gideri hesapla
+            const totalExpense = currentYearExpenses.reduce((sum, expense) => sum + Number(expense.expenseAmount), 0);
+            
+            // Yeni hesaplama mantığı - Periyodik dağılıma göre (sadece 2025 ve sonrası için)
+            // Yıllık gider: 2025 ve sonrası toplam gider
+            const yearlyExpense = totalExpense;
+            
+            // Aylık gider: Yıllık giderin 1/12'si
+            const monthlyExpense = totalExpense / 12;
+            
+            // Haftalık gider: Aylık giderin 1/4'ü (bir ayda yaklaşık 4 hafta)
+            const weeklyExpense = monthlyExpense / 4;
+            
+            // Kategori bazında toplam giderleri hesapla (zaman aralığı filtreli verilere göre)
+            const expensesByCategory = {};
+            for (const expense of timeFilteredExpenses) {
+                const category = expense.expenseType;
+                if (!expensesByCategory[category]) {
+                    expensesByCategory[category] = 0;
+                }
+                expensesByCategory[category] += parseFloat(expense.expenseAmount);
+            }
+
+            // Kategori dağılımı için veri formatla
+            const categoryDistribution = Object.entries(expensesByCategory).map(([category, amount]) => ({
+                name: category,
+                value: parseFloat(amount.toFixed(2))
+            }));
+
+            console.log('Dashboard expense summaries with periodic distribution:');
+            console.log(`- All Time Total: ${allTimeExpense}`);
+            console.log(`- Current Year Total (2025+): ${totalExpense}`);
+            console.log(`- Monthly (1/12): ${monthlyExpense}`);
+            console.log(`- Weekly (1/48): ${weeklyExpense}`);
+
+            // Zaman dilimine göre günlük/haftalık/aylık gider dağılımını hesapla
+            const timeDistribution = await Expense.sequelize.query(`
+                WITH dates AS (
+                    SELECT date_trunc('${dateGrouping}', d)::date as expense_date
+                    FROM generate_series(
+                        :startDate::timestamp,
+                        :endDate::timestamp,
+                        '1 ${dateGrouping}'::interval
+                    ) d
+                )
+                SELECT 
+                    d.expense_date,
+                    COALESCE(SUM(e."expenseAmount"), 0) as total_amount
+                FROM dates d
+                LEFT JOIN "Expenses" e ON date_trunc('${dateGrouping}', e."expenseStartTime") = d.expense_date
+                GROUP BY d.expense_date
+                ORDER BY d.expense_date ASC
+            `, {
+                replacements: { startDate, endDate },
+                type: Expense.sequelize.QueryTypes.SELECT
+            });
+
+            // Tarih bazlı gider dağılımını formatla
+            const formattedTimeDistribution = timeDistribution.map(item => ({
+                date: new Date(item.expense_date).toLocaleDateString('tr-TR', dateFormat),
+                amount: parseFloat(item.total_amount)
+            }));
+
+            res.json({
+                success: true,
+                data: {
+                    expenses: expenses.map(expense => ({
+                        id: expense.id,
+                        amount: parseFloat(expense.expenseAmount),
+                        type: expense.expenseType,
+                        description: expense.expenseDescription,
+                        startDate: expense.expenseStartTime,
+                        endDate: expense.expenseEndTime
+                    })),
+                    allTimeExpense: parseFloat(allTimeExpense.toFixed(2)),
+                    totalExpense: parseFloat(totalExpense.toFixed(2)),
+                    yearlyExpense: parseFloat(yearlyExpense.toFixed(2)),
+                    monthlyExpense: parseFloat(monthlyExpense.toFixed(2)),
+                    weeklyExpense: parseFloat(weeklyExpense.toFixed(2)),
+                    categoryDistribution,
+                    timeDistribution: formattedTimeDistribution
+                }
+            });
+        } catch (error) {
+            console.error('Get expense summary error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gider özeti alınırken bir hata oluştu'
+            });
+        }
+    },
+
+    // Ürün fiyat analizi için veri getir
+    getProductPriceAnalysis: async (req, res) => {
+        try {
+            // Ürün modelini getirelim
+            const { Product, Category } = require('../models');
+            
+            // Önce boş bir sonuç hazırlayalım
+            const result = {
+                products: [],
+                categoryAnalysis: [],
+                priceDistribution: []
+            };
+
+            try {
+                // Tüm ürünleri ve fiyatlarını getirelim
+                const products = await Product.findAll({
+                    attributes: [
+                        'id', 'name', 'sku', 'price', 'quantity'
+                    ],
+                    include: [{
+                        model: Category,
+                        as: 'Category',
+                        attributes: ['name'],
+                        required: false
+                    }],
+                    where: {
+                        price: {
+                            [Op.gt]: 0
+                        }
+                    },
+                    order: [['price', 'DESC']],
+                    limit: 15
+                });
+                
+                // Ürün fiyat verilerini formatlayalım
+                result.products = products.map(product => {
+                    const plainProduct = product.get({ plain: true });
+                    const price = parseFloat(plainProduct.price) || 0;
+                    const quantity = parseInt(plainProduct.quantity) || 0;
+                    
+                    return {
+                        id: plainProduct.id,
+                        name: plainProduct.name || 'İsimsiz Ürün',
+                        sku: plainProduct.sku || 'SKU Yok',
+                        price: price,
+                        category: plainProduct.Category?.name || 'Kategorisiz',
+                        totalValue: price * quantity
+                    };
+                });
+            } catch (productError) {
+                console.error('Ürün verisi alınırken hata:', productError);
+                // Hata olsa bile devam edelim
+            }
+
+            try {
+                // Kategori bazında ortalama fiyat analizi - Daha basit sorgu
+                const categorySql = `
+                    SELECT 
+                        COALESCE(c.name, 'Kategorisiz') as category_name,
+                        AVG(p.price) as average_price,
+                        COUNT(p.id) as product_count,
+                        SUM(p.price * p.quantity) as total_value
+                    FROM "Products" p
+                    LEFT JOIN "Categories" c ON p."categoryId" = c.id
+                    WHERE p.price > 0
+                    GROUP BY c.name
+                    ORDER BY AVG(p.price) DESC
+                `;
+                
+                const [categoryResults] = await Product.sequelize.query(categorySql);
+                
+                // Kategori sonuçlarını formatlayalım
+                result.categoryAnalysis = categoryResults.map(row => ({
+                    category: row.category_name || 'Kategorisiz',
+                    averagePrice: parseFloat(row.average_price) || 0,
+                    productCount: parseInt(row.product_count) || 0,
+                    totalValue: parseFloat(row.total_value) || 0
+                }));
+            } catch (categoryError) {
+                console.error('Kategori analizi alınırken hata:', categoryError);
+                // Hata olsa bile devam edelim
+            }
+
+            try {
+                // Fiyat aralıkları analizi - Daha basit yaklaşım
+                const priceRanges = [
+                    { range: '0-100 TL', min: 0, max: 100 },
+                    { range: '100-500 TL', min: 100, max: 500 },
+                    { range: '500-1000 TL', min: 500, max: 1000 },
+                    { range: '1000-5000 TL', min: 1000, max: 5000 },
+                    { range: '5000+ TL', min: 5000, max: 999999999 }
+                ];
+                
+                result.priceDistribution = await Promise.all(
+                    priceRanges.map(async ({ range, min, max }) => {
+                        try {
+                            const count = await Product.count({
+                                where: {
+                                    price: {
+                                        [Op.gt]: min,
+                                        [Op.lte]: max
+                                    }
+                                }
+                            });
+                            return { name: range, value: count || 0 };
+                        } catch (error) {
+                            console.error(`Fiyat aralığı analizi hatası: ${range}`, error);
+                            return { name: range, value: 0 };
+                        }
+                    })
+                );
+            } catch (rangeError) {
+                console.error('Fiyat aralığı analizi hatası:', rangeError);
+                // Varsayılan değerler kullanılsın
+                result.priceDistribution = [
+                    { name: '0-100 TL', value: 0 },
+                    { name: '100-500 TL', value: 0 },
+                    { name: '500-1000 TL', value: 0 },
+                    { name: '1000-5000 TL', value: 0 },
+                    { name: '5000+ TL', value: 0 }
+                ];
+            }
+
+            // Sonucu döndür
+            res.json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            console.error('Product price analysis error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Ürün fiyat analizi alınırken bir hata oluştu',
+                error: error.message
+            });
+        }
+    },
+
+    // Gelir verilerini dashboard için getir
+    getRevenueSummary: async (req, res) => {
+        try {
+            const { timeRange = 'monthly' } = req.query;
+            const now = new Date();
+            let startDate;
+            let dateFormat;
+            let dateGrouping;
+
+            // Zaman aralığına göre başlangıç tarihini ve format ayarlarını belirle
+            switch (timeRange) {
+                case 'daily':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
+                    break;
+                case 'weekly':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFormat = { day: 'numeric', month: 'short' };
+                    dateGrouping = 'day';
+                    break;
+                case 'monthly':
+                default:
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    dateFormat = { month: 'long' };
+                    dateGrouping = 'month';
+                    break;
+            }
+
+            // Günün sonuna kadar olan verileri almak için bitiş tarihini ayarla
+            const endDate = new Date(now);
+            endDate.setHours(23, 59, 59, 999);
+
+            // Revenue modelini doğrudan require ile alalım
+            const { Revenue } = require('../models');
+            
+            // TÜM gelirleri getir
+            const revenues = await Revenue.findAll({
+                order: [['revenueDate', 'DESC']]
+            });
+
+            // Sadece zaman aralığındaki gelirleri de alalım (grafikler için)
+            const timeFilteredRevenues = await Revenue.findAll({
+                where: {
+                    revenueDate: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                order: [['revenueDate', 'DESC']]
+            });
+
+            // Tüm zamanların toplam gelirini hesapla
+            const allTimeRevenue = revenues.reduce((sum, revenue) => sum + Number(revenue.amount), 0);
+            
+            // 2025 ve sonrası için gelirleri filtrele
+            const currentYearRevenues = revenues.filter(revenue => {
+                const revenueDate = new Date(revenue.revenueDate);
+                return revenueDate.getFullYear() >= 2025;
+            });
+            
+            // 2025 ve sonrası için toplam geliri hesapla
+            const totalRevenue = currentYearRevenues.reduce((sum, revenue) => sum + Number(revenue.amount), 0);
+            
+            // Yeni hesaplama mantığı - Periyodik dağılıma göre (sadece 2025 ve sonrası için)
+            // Yıllık gelir: 2025 ve sonrası toplam gelir
+            const yearlyRevenue = totalRevenue;
+            
+            // Aylık gelir: Yıllık gelirin 1/12'si
+            const monthlyRevenue = totalRevenue / 12;
+            
+            // Haftalık gelir: Aylık gelirin 1/4'ü (bir ayda yaklaşık 4 hafta)
+            const weeklyRevenue = monthlyRevenue / 4;
+            
+            // Kategori bazında toplam gelirleri hesapla (zaman aralığı filtreli verilere göre)
+            const revenuesByCategory = {};
+            for (const revenue of timeFilteredRevenues) {
+                const category = revenue.source || 'Diğer';
+                if (!revenuesByCategory[category]) {
+                    revenuesByCategory[category] = 0;
+                }
+                revenuesByCategory[category] += parseFloat(revenue.amount);
+            }
+
+            // Kategori dağılımı için veri formatla
+            const categoryDistribution = Object.entries(revenuesByCategory).map(([category, amount]) => ({
+                name: category,
+                value: parseFloat(amount.toFixed(2))
+            }));
+
+            console.log('Dashboard revenue summaries with periodic distribution:');
+            console.log(`- All Time Total: ${allTimeRevenue}`);
+            console.log(`- Current Year Total (2025+): ${totalRevenue}`);
+            console.log(`- Monthly (1/12): ${monthlyRevenue}`);
+            console.log(`- Weekly (1/48): ${weeklyRevenue}`);
+
+            // Zaman dilimine göre günlük/haftalık/aylık gelir dağılımını hesapla
+            const timeDistribution = await Revenue.sequelize.query(`
+                WITH dates AS (
+                    SELECT date_trunc('${dateGrouping}', d)::date as revenue_date
+                    FROM generate_series(
+                        :startDate::timestamp,
+                        :endDate::timestamp,
+                        '1 ${dateGrouping}'::interval
+                    ) d
+                )
+                SELECT 
+                    d.revenue_date,
+                    COALESCE(SUM(r."amount"), 0) as total_amount
+                FROM dates d
+                LEFT JOIN "Revenues" r ON date_trunc('${dateGrouping}', r."revenueDate") = d.revenue_date
+                GROUP BY d.revenue_date
+                ORDER BY d.revenue_date ASC
+            `, {
+                replacements: { startDate, endDate },
+                type: Revenue.sequelize.QueryTypes.SELECT
+            });
+
+            // Tarih bazlı gelir dağılımını formatla
+            const formattedTimeDistribution = timeDistribution.map(item => ({
+                date: new Date(item.revenue_date).toLocaleDateString('tr-TR', dateFormat),
+                amount: parseFloat(item.total_amount)
+            }));
+
+            res.json({
+                success: true,
+                data: {
+                    revenues: revenues.map(revenue => ({
+                        id: revenue.id,
+                        amount: parseFloat(revenue.amount),
+                        source: revenue.source,
+                        description: revenue.description,
+                        date: revenue.revenueDate
+                    })),
+                    allTimeRevenue: parseFloat(allTimeRevenue.toFixed(2)),
+                    totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+                    yearlyRevenue: parseFloat(yearlyRevenue.toFixed(2)),
+                    monthlyRevenue: parseFloat(monthlyRevenue.toFixed(2)),
+                    weeklyRevenue: parseFloat(weeklyRevenue.toFixed(2)),
+                    categoryDistribution,
+                    timeDistribution: formattedTimeDistribution
+                }
+            });
+        } catch (error) {
+            console.error('Get revenue summary error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gelir özeti alınırken bir hata oluştu'
+            });
+        }
     }
 };
 

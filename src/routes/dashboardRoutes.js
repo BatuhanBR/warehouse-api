@@ -22,5 +22,8 @@ router.get('/warehouse-occupancy', auth, dashboardController.getWarehouseOccupan
 router.get('/low-stock-products', auth, dashboardController.getLowStockProducts);
 router.get('/daily-movement-details', auth, dashboardController.getDailyMovementDetails);
 router.get('/top-valued-products', auth, dashboardController.getTopValuedProducts);
+router.get('/expense-summary', auth, dashboardController.getExpenseSummary);
+router.get('/revenue-summary', auth, dashboardController.getRevenueSummary);
+router.get('/product-price-analysis', auth, dashboardController.getProductPriceAnalysis);
 
 module.exports = router;

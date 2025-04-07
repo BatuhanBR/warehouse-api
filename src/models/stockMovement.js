@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
   StockMovement.init({
     productId: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: true
     },
     locationId: {
       type: DataTypes.INTEGER,

@@ -74,7 +74,7 @@ const stockMovementController = {
     // Yeni stok hareketi oluştur
     createStockMovement: async (req, res) => {
         try {
-            const { productId, type, quantity, description } = req.body;
+            const { productId, type, quantity, description, locationId } = req.body;
 
             // Ürünü bul
             const product = await Product.findByPk(productId);
@@ -105,6 +105,7 @@ const stockMovementController = {
             // Stok hareketini kaydet
             const movement = await StockMovement.create({
                 productId,
+                locationId,
                 type,
                 quantity,
                 description,

@@ -65,17 +65,19 @@ const productController = {
 
     getProductById: async (req, res) => {
         try {
-            const product = await Product.findByPk(req.params.id, {
-                attributes: PRODUCT_ATTRIBUTES,
+            const { id } = req.params;
+            const product = await Product.findByPk(id, {
                 include: [
-                    { 
-                        model: User, 
-                        as: 'creator', 
-                        attributes: ['username', 'email'] 
-                    }
+                    { model: Category, as: 'Category', attributes: ['id', 'name'] },
+                    { model: Location, as: 'Location', attributes: ['id', 'code', 'rackNumber', 'level', 'position'] }
+                ],
+                attributes: [
+                    'id', 'name', 'sku', 'description', 'quantity', 'price', 
+                    'minStockLevel', 'categoryId', 'locationId', 'company', 
+                    'weight', 'width', 'height', 'length', 'sizeCategory', 'createdAt', 'updatedAt'
                 ]
             });
-            
+
             if (!product) {
                 return res.status(404).json({
                     success: false,
@@ -87,10 +89,12 @@ const productController = {
                 success: true,
                 data: product
             });
+
         } catch (error) {
+            console.error('Get product by ID error:', error);
             res.status(500).json({
                 success: false,
-                message: error.message
+                message: 'Ürün getirilirken bir hata oluştu'
             });
         }
     },
@@ -141,6 +145,7 @@ const productController = {
                     quantity: productData.quantity,
                     description: 'İlk stok girişi',
                     productId: product.id,
+                    locationId: productData.locationId,
                     previousStock: 0,
                     newStock: productData.quantity,
                     createdBy: userId
@@ -182,20 +187,8 @@ const productController = {
         try {
             const { id } = req.params;
             
-            // SKU güncelleniyorsa formatını kontrol et
-            if (req.body.sku) {
-                const skuFormat = /^\d{2}-[A-Z]{5}$/;
-                if (!skuFormat.test(req.body.sku.trim())) {
-                    await transaction.rollback();
-                    return res.status(400).json({
-                        success: false,
-                        message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
-                    });
-                }
-            }
-
             // Önce ürünü bulalım
-            const product = await Product.findByPk(id);
+            const product = await Product.findByPk(id, { transaction });
 
             if (!product) {
                 await transaction.rollback();
@@ -205,26 +198,103 @@ const productController = {
                 });
             }
 
-            // Güncellenecek verileri hazırla
-            const updateData = {
-                name: req.body.name.trim(),
-                sku: req.body.sku.trim(),
-                description: req.body.description || '',
-                quantity: parseInt(req.body.stock) || 0,
-                price: parseFloat(req.body.price) || 0,
-                minStockLevel: parseInt(req.body.minStock) || 0,
-                categoryId: parseInt(req.body.categoryId || req.body.category),
-                locationId: req.body.locationId || null,
-                company: req.body.company || '',
-                weight: req.body.weight || 0,
-                sizeCategory: req.body.sizeCategory || ''
-            };
+            const updateData = {};
+            const previousStock = product.quantity;
+            let newStock = previousStock; // Stok gönderilmezse mevcut değeri koru
 
+            // SKU güncelleniyorsa formatını kontrol et
+            if (req.body.sku !== undefined) {
+                const sku = req.body.sku.trim();
+                const skuFormat = /^\d{2}-[A-Z]{5}$/;
+                if (!skuFormat.test(sku)) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: 'SKU formatı geçersiz. Format: XX-YYYYY (2 sayı - 5 büyük harf) şeklinde olmalıdır.'
+                    });
+                }
+                updateData.sku = sku;
+            }
+            
+            // Diğer alanları sadece gönderilmişse güncelleme listesine ekle
+            if (req.body.name !== undefined) updateData.name = req.body.name.trim();
+            if (req.body.description !== undefined) updateData.description = req.body.description;
+            
+            // Stok/Quantity kontrolü (ikisi de gelebilir, quantity öncelikli)
+            if (req.body.quantity !== undefined) {
+                newStock = parseInt(req.body.quantity, 10);
+                if (isNaN(newStock)) {
+                    await transaction.rollback();
+                    return res.status(400).json({ success: false, message: 'Geçersiz miktar değeri' });
+                }
+                updateData.quantity = newStock;
+            } else if (req.body.stock !== undefined) {
+                newStock = parseInt(req.body.stock, 10);
+                 if (isNaN(newStock)) {
+                    await transaction.rollback();
+                    return res.status(400).json({ success: false, message: 'Geçersiz stok değeri' });
+                }
+                updateData.quantity = newStock;
+            }
+            
+            if (req.body.price !== undefined) updateData.price = parseFloat(req.body.price);
+            if (req.body.minStockLevel !== undefined) updateData.minStockLevel = parseInt(req.body.minStockLevel, 10);
+            else if (req.body.minStock !== undefined) updateData.minStockLevel = parseInt(req.body.minStock, 10); // Eski 'minStock' ile uyumluluk
+
+            if (req.body.categoryId !== undefined) updateData.categoryId = parseInt(req.body.categoryId, 10);
+            else if (req.body.category !== undefined) updateData.categoryId = parseInt(req.body.category, 10); // Eski 'category' ile uyumluluk
+
+            if (req.body.locationId !== undefined) updateData.locationId = req.body.locationId; // null değeri de kabul eder
+            if (req.body.company !== undefined) updateData.company = req.body.company;
+            if (req.body.weight !== undefined) updateData.weight = parseFloat(req.body.weight);
+            if (req.body.width !== undefined) updateData.width = parseFloat(req.body.width);
+            if (req.body.height !== undefined) updateData.height = parseFloat(req.body.height);
+            if (req.body.length !== undefined) updateData.length = parseFloat(req.body.length);
+            if (req.body.dailyStorageRate !== undefined) updateData.dailyStorageRate = parseFloat(req.body.dailyStorageRate);
+            if (req.body.sizeCategory !== undefined) updateData.sizeCategory = req.body.sizeCategory;
+
+            // Güncellenecek veri yoksa hata ver
+            if (Object.keys(updateData).length === 0) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: 'Güncellenecek veri bulunamadı'
+                });
+            }
+            
             // Direkt SQL UPDATE sorgusu kullan
             await Product.update(updateData, {
                 where: { id: id },
                 transaction
             });
+
+            // Stok değişimi varsa stok hareketi oluştur
+            const stockChanged = updateData.quantity !== undefined && previousStock !== newStock;
+            if (stockChanged) {
+                const stockDifference = newStock - previousStock;
+                const movementType = stockDifference > 0 ? 'IN' : 'OUT';
+                const quantityChanged = Math.abs(stockDifference);
+                
+                await StockMovement.create({
+                    type: movementType,
+                    quantity: quantityChanged,
+                    description: `Ürün düzenlendi - ${product.name}`,
+                    previousStock: previousStock,
+                    newStock: newStock,
+                    productId: id,
+                    // Lokasyon güncellendiyse yenisini, değilse eskisini kullan
+                    locationId: updateData.locationId !== undefined ? updateData.locationId : product.locationId, 
+                    createdBy: req.user.id
+                }, { transaction });
+                
+                console.log('Ürün düzenleme - Stok hareketi oluşturuldu:', {
+                    type: movementType,
+                    quantity: quantityChanged,
+                    previousStock,
+                    newStock,
+                    productId: id
+                });
+            }
 
             await transaction.commit();
 
@@ -253,6 +323,10 @@ const productController = {
         } catch (error) {
             await transaction.rollback();
             console.error('Update product error:', error);
+             // Daha spesifik hata mesajları verelim
+            if (error.name === 'SequelizeValidationError') {
+                 return res.status(400).json({ success: false, message: 'Doğrulama hatası: ' + error.errors.map(e => e.message).join(', ') });
+            }
             res.status(500).json({
                 success: false,
                 message: 'Ürün güncellenirken bir hata oluştu'
@@ -279,30 +353,79 @@ const productController = {
                 });
             }
 
-            // Eğer ürünün stok miktarı 0'dan büyükse, stok çıkış hareketi oluştur
-            if (product.quantity > 0) {
-                await StockMovement.create({
-                    type: 'OUT',
-                    quantity: product.quantity,
-                    description: 'Ürün silindi',
-                    productId: product.id,
-                    previousStock: product.quantity,
-                    newStock: 0,
-                    createdBy: req.user.id
-                }, { transaction });
+            // Silinecek ürün bilgilerini saklayalım
+            const productData = {
+                id: product.id,
+                name: product.name,
+                quantity: product.quantity,
+                locationId: product.locationId,
+                userId: req.user.id
+            };
+
+            // Önce ürüne ait tüm stok hareketlerini silelim
+            await StockMovement.destroy({
+                where: {
+                    productId: id
+                },
+                transaction
+            });
+
+            // Eğer ürünün ilişkili bir lokasyonu varsa, lokasyonu boşaltalım
+            if (productData.locationId) {
+                await Location.update(
+                    { isOccupied: false, productId: null },
+                    { 
+                        where: { id: productData.locationId },
+                        transaction
+                    }
+                );
             }
 
-            // Sonra ürünü silelim
+            // Ürünü silelim
             await product.destroy({ transaction });
             
+            // Transaction'ı commit edelim
             await transaction.commit();
+
+            // Tüm silme işlemleri başarılı olduktan sonra son bir çıkış hareketi kaydedelim
+            try {
+                // Bu kayıt artık silinen ürünün ID'sine referans vermeyecek
+                if (productData.quantity > 0) {
+                    await StockMovement.create({
+                        type: 'OUT',
+                        quantity: productData.quantity,
+                        description: `"${productData.name}" isimli ürün silindi`,
+                        previousStock: productData.quantity,
+                        newStock: 0,
+                        locationId: productData.locationId,
+                        createdBy: req.user.id
+                        // productId alanını belirtmiyoruz, böylece silinen ürüne referans vermiyoruz
+                    });
+                    
+                    console.log('Stok çıkış hareketi oluşturuldu:', {
+                        type: 'OUT',
+                        quantity: productData.quantity,
+                        description: `"${productData.name}" isimli ürün silindi`,
+                        previousStock: productData.quantity,
+                        newStock: 0,
+                        locationId: productData.locationId
+                    });
+                }
+            } catch (stockMovementError) {
+                console.error('Stok hareketi oluşturma hatası:', stockMovementError);
+                // Bu hata ürün silme işlemini etkilemesin, sadece loglayalım
+            }
 
             res.json({
                 success: true,
                 message: 'Ürün başarıyla silindi'
             });
+
         } catch (error) {
-            await transaction.rollback();
+            // Transaction henüz commit edilmediyse geri alalım
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
             console.error('Delete product error:', error);
             res.status(500).json({
                 success: false,
@@ -511,13 +634,14 @@ const productController = {
             const { ids } = req.body;
             
             if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                await transaction.rollback();
                 return res.status(400).json({
                     success: false,
                     message: 'Silinecek ürün ID\'leri geçerli değil'
                 });
             }
 
-            // Önce ürünleri bulalım
+            // Önce ürünleri bulalım ve bilgilerini saklayalım
             const products = await Product.findAll({
                 where: {
                     id: {
@@ -526,22 +650,15 @@ const productController = {
                 }
             });
 
-            // Her ürün için stok çıkış hareketi oluştur
-            for (const product of products) {
-                if (product.quantity > 0) {
-                    await StockMovement.create({
-                        type: 'OUT',
-                        quantity: product.quantity,
-                        description: 'Ürün toplu silme işleminde silindi',
-                        productId: product.id,
-                        previousStock: product.quantity,
-                        newStock: 0,
-                        createdBy: req.user.id
-                    }, { transaction });
-                }
-            }
-
-            // Ürünlerin stok hareketlerini silelim
+            // Silinecek ürünlerin bilgilerini saklayalım
+            const productsData = products.map(product => ({
+                id: product.id,
+                name: product.name,
+                quantity: product.quantity,
+                locationId: product.locationId
+            }));
+            
+            // Tüm bu ürünlere ait stok hareketlerini silelim
             await StockMovement.destroy({
                 where: {
                     productId: {
@@ -550,6 +667,19 @@ const productController = {
                 },
                 transaction
             });
+
+            // Ürünlere ait lokasyonları boşaltalım
+            for (const product of products) {
+                if (product.locationId) {
+                    await Location.update(
+                        { isOccupied: false, productId: null },
+                        { 
+                            where: { id: product.locationId },
+                            transaction
+                        }
+                    );
+                }
+            }
 
             // Sonra ürünleri silelim
             const deletedCount = await Product.destroy({
@@ -563,6 +693,36 @@ const productController = {
 
             await transaction.commit();
 
+            // Şimdi silinen ürünler için stok çıkış hareketleri oluşturalım
+            try {
+                for (const productData of productsData) {
+                    if (productData.quantity > 0) {
+                        await StockMovement.create({
+                            type: 'OUT',
+                            quantity: productData.quantity,
+                            description: `"${productData.name}" isimli ürün toplu silme işleminde silindi`,
+                            previousStock: productData.quantity,
+                            newStock: 0,
+                            locationId: productData.locationId,
+                            createdBy: req.user.id
+                            // productId belirtmiyoruz
+                        });
+                        
+                        console.log('Toplu silme - Stok çıkış hareketi oluşturuldu:', {
+                            type: 'OUT',
+                            quantity: productData.quantity,
+                            description: `"${productData.name}" isimli ürün toplu silme işleminde silindi`,
+                            previousStock: productData.quantity,
+                            newStock: 0,
+                            locationId: productData.locationId
+                        });
+                    }
+                }
+            } catch (stockMovementError) {
+                console.error('Stok hareketleri oluşturma hatası:', stockMovementError);
+                // Bu hata ürün silme işlemini etkilemesin, sadece loglayalım
+            }
+
             res.json({
                 success: true,
                 message: `${deletedCount} ürün başarıyla silindi`,
@@ -570,7 +730,10 @@ const productController = {
             });
 
         } catch (error) {
-            await transaction.rollback();
+            // Transaction henüz commit edilmediyse geri alalım
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
             console.error('Bulk delete error:', error);
             res.status(500).json({
                 success: false,

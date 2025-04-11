@@ -40,7 +40,8 @@ const stockMovementController = {
                     {
                         model: Product,
                         as: 'Product',
-                        attributes: ['name']
+                        attributes: ['name'],
+                        paranoid: false
                     },
                     {
                         model: Location,

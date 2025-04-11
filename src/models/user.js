@@ -56,6 +56,10 @@ module.exports = (sequelize, DataTypes) => {
         lastLoginAt: {
             type: DataTypes.DATE,
             allowNull: true
+        },
+        profilePictureUrl: {
+            type: DataTypes.STRING,
+            allowNull: true
         }
     }, {
         sequelize,

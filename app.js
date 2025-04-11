@@ -11,16 +11,26 @@ const logActivity = require('./src/middleware/activityLogger');
 const { initializeDatabase } = require('./src/models');
 require('./src/jobs/stockAlertJob');  // Cron job'ları başlat
 const activityLogger = require('./src/middleware/activityLogger');
+const path = require('path');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Geniş CORS ayarları (tüm originlere izin ver)
+const corsOptions = {
+  origin: '*', // veya spesifik origin: 'http://localhost:3001'
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions)); // CORS'u seçeneklerle uygula
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // Rate limiters
 app.use('/api/auth', authLimiter);
@@ -32,6 +42,15 @@ app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:htt
         write: (message) => logger.info(message.trim())
     }
 }));
+
+// Statik dosyaları sunmadan ÖNCE CORS'un uygulandığından emin olalım
+// (Yukarıdaki genel app.use(cors(corsOptions)) aslında yeterli olmalı,
+// ama express.static'in davranışına karşı ek güvence olarak düşünebiliriz.
+// Bu satır muhtemelen gereksiz ama zararı da olmaz.)
+// app.use('/uploads', cors(corsOptions)); 
+
+// Statik dosyaları sun
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Activity logger'ı ekle
 app.use(logActivity);
@@ -56,6 +75,7 @@ const stockMovementRoutes = require('./src/routes/stockMovementRoutes');
 const warehouseRoutes = require('./src/routes/warehouseRoutes');
 const shelfRoutes = require('./src/routes/shelfRoutes');
 const expenseRoutes = require('./src/routes/expenseRoutes');
+const contactRoutes = require('./src/routes/contactRoutes');
 console.log('All routes loaded');
 
 // Ana route
@@ -81,6 +101,7 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/warehouse', warehouseRoutes);
 app.use('/api/shelves', shelfRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/contact', contactRoutes);
 
 console.log('All API routes registered');
 

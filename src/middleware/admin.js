@@ -1,31 +1,35 @@
-const { User, Role } = require('../models');
+// const { User, Role } = require('../models'); // Artık DB sorgusu yapmayacağız
 
-const admin = async (req, res, next) => {
-    try {
-        // Kullanıcı ve rolünü getir
-        const user = await User.findByPk(req.user.id, {
-            include: [{
-                model: Role,
-                as: 'Role'
-            }]
-        });
+const admin = (req, res, next) => {
+    // <<< LOG EKLEME >>>
+    console.log('--- Admin Middleware Başladı ---');
+    console.log('req.user içeriği:', req.user);
+    console.log('req.user.role içeriği:', req.user?.role);
+    console.log('-----------------------------');
+    // <<< LOG BİTTİ >>>
 
-        // Admin rolü kontrolü
-        if (user.Role.name !== 'admin') {
-            return res.status(403).json({
-                success: false,
-                message: 'Bu işlem için admin yetkisi gerekiyor'
-            });
-        }
-
-        next();
-    } catch (error) {
-        console.error('Admin middleware error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Yetkilendirme hatası'
+    // auth middleware'inin req.user'ı ve req.user.role'ü (string olarak) ayarladığı varsayılıyor
+    if (!req.user || !req.user.role) {
+        console.error('Admin middleware: req.user veya req.user.role bulunamadı.');
+        // Bu durum genellikle auth middleware hatasıdır, 401 daha uygun olabilir
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Yetkilendirme bilgisi eksik veya hatalı.' 
         });
     }
+
+    // Doğrudan req.user.role'ü kontrol et
+    if (req.user.role !== 'admin') {
+        console.log(`Admin kontrolü başarısız: req.user.role ('${req.user.role}') !== 'admin'`); // Hata durumunu logla
+        return res.status(403).json({
+            success: false,
+            message: 'Bu işlem için admin yetkisi gerekiyor'
+        });
+    }
+
+    console.log('Admin kontrolü başarılı, next() çağrılıyor.'); // Başarı durumunu logla
+    // Yetki varsa devam et
+    next();
 };
 
 module.exports = admin; 

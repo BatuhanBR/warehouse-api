@@ -85,15 +85,32 @@ const userController = {
             
             // Spesifik hata mesajları
             if (error.name === 'SequelizeUniqueConstraintError') {
+                let field = 'Bilinmeyen alan';
+                // PostgreSQL hatasındaki constraint adını kontrol et (email için genellikle Users_email_key gibi olur)
+                if (error.parent?.constraint?.includes('email')) { 
+                    field = 'email adresi';
+                } else if (error.parent?.constraint?.includes('username')) { 
+                    field = 'kullanıcı adı';
+                } else if (error.parent?.constraint?.includes('_pkey')) { // Constraint adı _pkey ile bitiyorsa ID'dir
+                    // ID çakışması durumunda daha genel bir hata verelim veya loglayalım
+                    console.error("Birincil anahtar (ID) çakışması tespit edildi:", error);
+                    return res.status(500).json({
+                         success: false,
+                         // Frontend'e çok teknik detay vermeyelim
+                         message: 'Kullanıcı oluşturulurken beklenmedik bir veritabanı hatası oluştu. Lütfen tekrar deneyin veya yöneticiye başvurun.' 
+                    });
+                }
+                // Diğer unique constraint hataları için
                 return res.status(400).json({
                     success: false,
-                    message: 'Bu email adresi zaten kullanımda'
+                    message: `Bu ${field} zaten kullanımda.`
                 });
             }
 
+            // Diğer tüm hatalar için
             res.status(500).json({
                 success: false,
-                message: 'Kullanıcı oluşturulurken bir hata oluştu'
+                message: 'Kullanıcı oluşturulurken bir sunucu hatası oluştu.'
             });
         }
     },
@@ -303,12 +320,50 @@ const userController = {
         }
     },
 
+    // Mevcut (giriş yapmış) kullanıcı bilgilerini getir
+    getCurrentUser: async (req, res) => {
+        try {
+            const userId = req.user.id; // authMiddleware tarafından eklenen kullanıcı ID'si
+
+            const user = await User.findByPk(userId, {
+                attributes: {
+                    exclude: ['password'] // Şifreyi dışarıda bırak
+                },
+                include: [{
+                    model: Role,
+                    as: 'role',
+                    attributes: ['name'] // Rol adını ekle
+                }]
+            });
+
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Kullanıcı bulunamadı.'
+                });
+            }
+
+            res.json({
+                success: true,
+                user: user // Kullanıcı bilgilerini döndür
+            });
+
+        } catch (error) {
+            console.error('Get current user error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Kullanıcı bilgileri alınırken bir sunucu hatası oluştu.'
+            });
+        }
+    },
+
     getProfile: async (req, res) => {
-        // ... implementation
+        // Bu fonksiyon belki getCurrentUser ile aynı işlevi görüyordu?
+        // Şimdilik yerinde bırakıyorum, ama /me rotası bunu kullanmıyor.
     },
 
     updateProfile: async (req, res) => {
-        // ... implementation
+        // ... implementation ...
     },
 
     // Kullanıcı aktivitelerini getir
@@ -384,6 +439,76 @@ const userController = {
             res.status(500).json({
                 success: false,
                 message: 'Kullanıcı aktiviteleri yüklenirken bir hata oluştu'
+            });
+        }
+    },
+
+    // Profil fotoğrafı yükleme/güncelleme
+    uploadProfilePicture: async (req, res) => {
+        try {
+            // 1. Dosya yüklendi mi kontrol et (Middleware zaten yaptı, req.file burada olmalı)
+            if (!req.file) {
+                // Bu durum normalde middleware tarafından yakalanmalı ama ekstra kontrol
+                console.error('Controller: Profil fotoğrafı dosyası req.file içinde bulunamadı.');
+                return res.status(400).json({ message: 'Profil fotoğrafı dosyası yüklenmedi veya işlenemedi.' });
+            }
+
+            // 2. Giriş yapmış kullanıcıyı bul (Auth middleware req.user'ı ekler)
+            const userId = req.user.id; 
+            const user = await User.findByPk(userId);
+
+            if (!user) {
+                return res.status(404).json({ message: 'Kullanıcı bulunamadı.' });
+            }
+
+            // 3. Dosya yolunu oluştur (sunucu tarafı göreceli yol)
+            // Örnek: /uploads/profile-pictures/user-1-1678886400000-123456789.jpg
+            // NOT: Frontend bu yolu kullanırken başına API Base URL eklemeli
+            const relativeFilePath = `/uploads/profile-pictures/${req.file.filename}`;
+
+            // 4. Kullanıcının profil fotoğrafı URL'sini güncelle
+            user.profilePictureUrl = relativeFilePath;
+            await user.save();
+
+            // 5. Güncellenmiş kullanıcı bilgisini döndür (şifre ve hassas olabilecek diğer alanlar hariç)
+            const userWithRoleName = await User.findByPk(userId, {
+                attributes: {
+                    exclude: ['password'] // Şifreyi dışarıda bırak
+                },
+                include: [{
+                    model: Role,
+                    as: 'role',
+                    attributes: ['name'] // Rol adını include ile al
+                }]
+            });
+
+            // Yanıt için kullanıcı nesnesini manuel olarak oluştur
+            const responseUser = {
+                id: userWithRoleName.id,
+                username: userWithRoleName.username,
+                email: userWithRoleName.email,
+                role: userWithRoleName.role?.name, // Role nesnesinden sadece name'i al
+                profilePictureUrl: userWithRoleName.profilePictureUrl,
+                isActive: userWithRoleName.isActive,
+                createdAt: userWithRoleName.createdAt,
+                updatedAt: userWithRoleName.updatedAt,
+                lastLoginAt: userWithRoleName.lastLoginAt
+                // İhtiyaç duyulan diğer güvenli alanları ekle
+            };
+
+            res.status(200).json({
+                success: true,
+                message: 'Profil fotoğrafı başarıyla güncellendi.',
+                user: responseUser // Manuel oluşturulan nesneyi döndür
+            });
+
+        } catch (error) {
+            console.error('Profil fotoğrafı yükleme controller hatası:', error);
+            // Middleware zaten dosya tipi/boyut hatalarını yakalamalı,
+            // bu yüzden buraya düşenler genellikle beklenmedik sunucu hatalarıdır.
+            res.status(500).json({ 
+                success: false,
+                message: 'Profil fotoğrafı güncellenirken bir sunucu hatası oluştu.' 
             });
         }
     }

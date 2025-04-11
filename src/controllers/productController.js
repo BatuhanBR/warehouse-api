@@ -336,13 +336,15 @@ const productController = {
 
     deleteProduct: async (req, res) => {
         const transaction = await sequelize.transaction();
+        const { description } = req.body; // Açıklamayı request body'den al
         
         try {
             const { id } = req.params;
 
-            // Önce ürünü bulalım
+            // Önce ürünü bulalım (paranoid: false ile silinmişleri de bulabiliriz ama gerek yok)
             const product = await Product.findByPk(id, {
-                attributes: PRODUCT_ATTRIBUTES
+                attributes: PRODUCT_ATTRIBUTES,
+                transaction // Transaction'a dahil edelim
             });
 
             if (!product) {
@@ -353,77 +355,46 @@ const productController = {
                 });
             }
 
-            // Silinecek ürün bilgilerini saklayalım
-            const productData = {
-                id: product.id,
-                name: product.name,
-                quantity: product.quantity,
-                locationId: product.locationId,
-                userId: req.user.id
-            };
-
-            // Önce ürüne ait tüm stok hareketlerini silelim
-            await StockMovement.destroy({
-                where: {
-                    productId: id
-                },
-                transaction
-            });
-
             // Eğer ürünün ilişkili bir lokasyonu varsa, lokasyonu boşaltalım
-            if (productData.locationId) {
+            if (product.locationId) {
                 await Location.update(
                     { isOccupied: false, productId: null },
                     { 
-                        where: { id: productData.locationId },
+                        where: { id: product.locationId },
                         transaction
                     }
                 );
             }
 
-            // Ürünü silelim
+            // Ürünü silelim (artık soft delete)
             await product.destroy({ transaction });
+
+            // Ürün silindiği için bir stok çıkış hareketi oluşturalım
+            if (product.quantity > 0) {
+                await StockMovement.create({
+                    type: 'OUT',
+                    quantity: product.quantity,
+                    // Açıklama: Gelen açıklamayı kullan veya varsayılan bir metin kullan
+                    description: description || `"${product.name}" isimli ürün silindi (ID: ${product.id})`,
+                    previousStock: product.quantity,
+                    newStock: 0,
+                    locationId: product.locationId, // Eski lokasyonu kaydedebiliriz
+                    productId: product.id, // Silinen ürüne referans veriyoruz
+                    createdBy: req.user.id
+                }, { transaction });
+            }
             
             // Transaction'ı commit edelim
             await transaction.commit();
 
-            // Tüm silme işlemleri başarılı olduktan sonra son bir çıkış hareketi kaydedelim
-            try {
-                // Bu kayıt artık silinen ürünün ID'sine referans vermeyecek
-                if (productData.quantity > 0) {
-                    await StockMovement.create({
-                        type: 'OUT',
-                        quantity: productData.quantity,
-                        description: `"${productData.name}" isimli ürün silindi`,
-                        previousStock: productData.quantity,
-                        newStock: 0,
-                        locationId: productData.locationId,
-                        createdBy: req.user.id
-                        // productId alanını belirtmiyoruz, böylece silinen ürüne referans vermiyoruz
-                    });
-                    
-                    console.log('Stok çıkış hareketi oluşturuldu:', {
-                        type: 'OUT',
-                        quantity: productData.quantity,
-                        description: `"${productData.name}" isimli ürün silindi`,
-                        previousStock: productData.quantity,
-                        newStock: 0,
-                        locationId: productData.locationId
-                    });
-                }
-            } catch (stockMovementError) {
-                console.error('Stok hareketi oluşturma hatası:', stockMovementError);
-                // Bu hata ürün silme işlemini etkilemesin, sadece loglayalım
-            }
-
             res.json({
                 success: true,
-                message: 'Ürün başarıyla silindi'
+                message: 'Ürün başarıyla silindi (geçici olarak) ve stok hareketi kaydedildi'
             });
 
         } catch (error) {
             // Transaction henüz commit edilmediyse geri alalım
-            if (transaction && !transaction.finished) {
+            if (transaction && !transaction.finished && !transaction.finished === 'commit') {
                 await transaction.rollback();
             }
             console.error('Delete product error:', error);

@@ -168,7 +168,8 @@ module.exports = (sequelize, DataTypes) => {
     tableName: 'Products',
     timestamps: true,
     createdAt: true,
-    updatedAt: true
+    updatedAt: true,
+    paranoid: true
   });
   
   return Product;

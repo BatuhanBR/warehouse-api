@@ -1,4 +1,4 @@
-const { Product, Location } = require('../models');
+const { Product, Location, Category } = require('../models');
 const logger = require('../config/logger');
 const db = require('../models');
 
@@ -19,7 +19,7 @@ const locationController = {
         }
     },
 
-    // 3D görünüm için lokasyon verilerini getir
+    // 3D görünüm için lokasyon verilerini getir (Kategori bilgisi ile)
     get3DView: async (req, res) => {
         try {
             const locations = await Location.findAll({
@@ -31,7 +31,12 @@ const locationController = {
                 include: [{
                     model: Product,
                     as: 'products',
-                    attributes: ['id', 'name', 'quantity', 'position3D']
+                    attributes: ['id', 'name', 'quantity', 'position3D', 'palletType', 'categoryId'],
+                    include: [{
+                        model: Category,
+                        as: 'Category',
+                        attributes: ['id', 'name']
+                    }]
                 }]
             });
 
@@ -186,64 +191,120 @@ const locationController = {
         }
     },
 
-    // Belirli bir rafın lokasyonlarını getir
+    // Belirli bir rafın lokasyonlarını getir (YENİ FORMAT)
     getRackLocations: async (req, res) => {
         try {
             const { rackNumber } = req.params;
             console.log('Requested rack number:', rackNumber);
 
-            // Lokasyonları getir
+            // 1. Raftaki tüm lokasyonları çek (Sadece gerekli ve var olan sütunları seç)
             const locations = await Location.findAll({
                 where: { 
                     rackNumber: parseInt(rackNumber)
                 },
-                include: [{
-                    model: Product,
-                    as: 'Product',
-                    required: false
-                }],
                 attributes: [
-                    'id', 'code', 'rackNumber', 'level', 
-                    'position', 'isOccupied', 'productId',
-                    'width', 'height', 'depth'
+                    'id', 'code', 'rackNumber', 'level', 'position', 
+                    'isOccupied', 'productId', // productId'yi yine de siliyoruz ama sorgu için kalabilir
+                    'width', 'height', 'depth', // Bunlar modelde var gibi, kontrol edilebilir
+                    'createdAt', 'updatedAt' // Bunlar genelde olur
+                 ], // Sadece var olan ve gerekli sütunları belirt
+                order: [
+                    ['level', 'ASC'],
+                    ['position', 'ASC']
                 ]
             });
-            
-            // Duplicate lokasyonları filtrele ve hücre durumlarını düzelt
-            const uniqueLocations = [];
-            const seenCodes = new Set();
-            
-            locations.forEach(location => {
-                const plainLocation = location.get({ plain: true });
-                
-                // Lokasyon kodunu kontrol et - tekrar eden locationları filtrele
-                if (!seenCodes.has(plainLocation.code)) {
-                    seenCodes.add(plainLocation.code);
-                    
-                    // İsOccupied ve Product durumunu kontrol et - tutarsızlıkları düzelt
-                    if (plainLocation.Product && plainLocation.Product.id) {
-                        plainLocation.isOccupied = true;
-                    } else {
-                        plainLocation.isOccupied = false;
-                        plainLocation.Product = null;
-                    }
-                    
-                    uniqueLocations.push(plainLocation);
+
+            if (!locations || locations.length === 0) {
+                return res.json({ success: true, data: [] }); // Boş rafsa boş dizi dön
+            }
+
+            // 2. Lokasyon ID'lerini al
+            const locationIds = locations.map(loc => loc.id);
+
+            // 3. Bu lokasyonlara ait tüm ürünleri çek (Kategori bilgisiyle birlikte)
+            const productsInLocations = await Product.findAll({
+                where: {
+                    locationId: locationIds
+                },
+                attributes: [ // Üründen sadece gerekli alanları seçelim
+                    'id', 'name', 'sku', 'quantity', 'weight', 
+                    'palletType', 'weightCategory', // Yeni eklenen alanlar
+                    'description', 'price', 'minStockLevel', 'maxStockLevel', // Diğer potansiyel alanlar
+                    'company', 'storageStartDate', 'expectedStorageDuration', 
+                    'createdAt', 'updatedAt', 'locationId', 'categoryId' // İlişkiler için ID'ler
+                ],
+                include: [{
+                    model: Category, // İlişkili kategoriyi de al
+                    as: 'Category', // Modeldeki alias'a göre
+                    attributes: ['id', 'name'] // Sadece gerekli alanları al
+                }]
+                // Gerekirse diğer product alanlarını attributes ile seçebiliriz --> Zaten yukarıda seçtik
+            });
+
+            // 4. Ürünleri lokasyon ID'sine göre grupla
+            const productsByLocationId = productsInLocations.reduce((acc, product) => {
+                const locId = product.locationId;
+                if (!acc[locId]) {
+                    acc[locId] = [];
                 }
+                acc[locId].push(product.get({ plain: true })); // Plain object olarak al
+                return acc;
+            }, {});
+
+            // 5. Lokasyonları formatla (pallets dizisini ekle ve kapasiteyi HESAPLA)
+            const formattedLocations = locations.map(location => {
+                const productsInThisLocation = productsByLocationId[location.id] || [];
+                const locationPlain = location.get({ plain: true }); // Plain object
+
+                // Kapasiteyi hesapla
+                let calculatedUsedCapacity = 0;
+                productsInThisLocation.forEach(product => {
+                    if (product.palletType === 'half') {
+                        calculatedUsedCapacity += 1;
+                    } else if (product.palletType === 'full') {
+                        calculatedUsedCapacity += 2;
+                    } else {
+                        // Palet tipi tanımsızsa veya farklıysa varsayılan olarak 1 kabul edelim?
+                        // Veya loglayıp 0 kabul edelim?
+                        logger.warn(`Product ID ${product.id} in Location ID ${location.id} has unknown or missing palletType: ${product.palletType}`);
+                        calculatedUsedCapacity += 1; // Şimdilik 1 varsayalım
+                    }
+                });
+
+                // totalCapacity'yi modelden veya varsayılan olarak al
+                const totalCapacity = locationPlain.totalCapacity || 2; // Modelde totalCapacity alanı var mı kontrol et, yoksa 2 varsay
+                
+                // Hesaplanan kapasitenin totalCapacity'yi geçmediğinden emin ol
+                calculatedUsedCapacity = Math.min(calculatedUsedCapacity, totalCapacity); 
+
+                const calculatedAvailableCapacity = totalCapacity - calculatedUsedCapacity;
+                const calculatedIsOccupied = calculatedUsedCapacity > 0;
+
+                // Location objesini güncelle/oluştur
+                return {
+                    ...locationPlain, // Modelden gelen diğer tüm alanlar
+                    totalCapacity: totalCapacity, // Total kapasiteyi de ekleyelim
+                    usedCapacity: calculatedUsedCapacity, // Hesaplanan değeri kullan
+                    availableCapacity: calculatedAvailableCapacity, // Hesaplanan değeri kullan
+                    isOccupied: calculatedIsOccupied, // Hesaplanan değeri kullan
+                    pallets: productsInThisLocation.map(p => ({ // products yerine pallets dizisi oluşturalım
+                        id: p.id, // Palet ID'si yok, ürün ID'si?
+                        productId: p.id,
+                        product: p // Tüm ürün bilgisini iç içe ekleyelim
+                    }))
+                    // productId alanını artık dışarı vermeyelim
+                    // productId: undefined 
+                };
             });
             
-            console.log(`Found ${uniqueLocations.length} unique locations for rack ${rackNumber}`);
+            console.log('Formatted locations with calculated capacity:', formattedLocations.length); // Sadece sayıyı logla
+            // Detaylı loglama için: console.log(JSON.stringify(formattedLocations, null, 2));
             
-            res.json({
-                success: true,
-                data: uniqueLocations
-            });
+            res.json({ success: true, data: formattedLocations });
+
         } catch (error) {
-            console.error('Raf lokasyonları getirme hatası:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Raf lokasyonları alınırken bir hata oluştu'
-            });
+             console.error('Error fetching rack locations:', error);
+             res.status(500).json({ success: false, message: 'Raf lokasyonları alınırken sunucu hatası oluştu.' });
         }
     },
 
@@ -290,26 +351,18 @@ const locationController = {
         }
     },
 
-    // Belirli bir rafın hücrelerini getir
+    // Belirli bir rafın hücrelerini getir (Kapasite bilgisi ve ÜRÜN DETAYLARI ile)
     getRackCells: async (req, res) => {
         try {
             const { rackNumber } = req.params;
             console.log(`Getting cells for rack ${rackNumber} from Locations table`);
             
-            // Belirli raf numarasına sahip tüm hücreleri getir
-            const cells = await db.Location.findAll({
+            const cells = await Location.findAll({
                 where: { rackNumber: parseInt(rackNumber) },
                 attributes: [
-                    'id',
-                    'code',
-                    'level',
-                    'position',
-                    'isOccupied',
-                    'productId',
-                    'availableCapacity', // Eğer bu alan yoksa SQL tarafında hesaplanabilir
-                    'width',
-                    'height',
-                    'depth'
+                    'id', 'code', 'rackNumber', 'level', 'position',
+                    'width', 'height', 'depth',
+                    'createdAt', 'updatedAt'
                 ],
                 order: [
                     ['level', 'ASC'],
@@ -317,24 +370,81 @@ const locationController = {
                 ]
             });
             
-            console.log(`Retrieved ${cells.length} cells for rack ${rackNumber}`);
-            
-            // Her hücre için frontend'in beklediği şekilde availableCapacity ekleyelim
-            const formattedCells = cells.map(cell => {
-                const plainCell = cell.get({ plain: true });
-                // Eğer availableCapacity alanı yoksa, isOccupied durumuna göre belirle
-                if (plainCell.availableCapacity === undefined) {
-                    plainCell.availableCapacity = plainCell.isOccupied ? 0 : 4; // Varsayılan kapasite 4
-                }
-                return plainCell;
+            if (!cells || cells.length === 0) {
+                return res.json({ success: true, data: [] });
+            }
+
+            const cellIds = cells.map(cell => cell.id);
+
+            const productsInCells = await Product.findAll({
+                where: { locationId: cellIds },
+                attributes: ['id', 'name', 'sku', 'locationId', 'palletType']
             });
 
-            res.json({
-                success: true,
-                data: formattedCells
+            const productsByLocationId = productsInCells.reduce((acc, product) => {
+                const locId = product.locationId;
+                if (!acc[locId]) acc[locId] = [];
+                acc[locId].push(product.get({ plain: true })); 
+                return acc;
+            }, {});
+
+            // 5. Hücreleri formatla (Kapasite ve Palet/Ürün bilgisi ile)
+            const formattedCells = cells.map(cell => {
+                const plainCell = cell.get({ plain: true });
+                const products = productsByLocationId[plainCell.id] || [];
+                
+                // Kapasiteyi hesapla ve logla
+                let calculatedUsedCapacity = 0;
+                console.log(`[CapacityCalc] Processing Cell ID: ${plainCell.id}, Code: ${plainCell.code}`); // Hücre log
+                products.forEach(product => {
+                    const currentPalletType = product.palletType?.trim().toLowerCase(); // Küçük harfe çevir ve boşlukları temizle
+                    let capacityToAdd = 0;
+                    
+                    if (currentPalletType === 'half') {
+                        capacityToAdd = 1;
+                    } else if (currentPalletType === 'full') {
+                        capacityToAdd = 2;
+                    } else {
+                        logger.warn(`Product ID ${product.id} in Location ID ${plainCell.id} has unknown or missing palletType: '${product.palletType}'. Assuming capacity 1.`);
+                        capacityToAdd = 1; // Varsayılan
+                    }
+                    calculatedUsedCapacity += capacityToAdd;
+                    // Detaylı ürün log
+                    console.log(`  -> Product ID: ${product.id}, RawPalletType: '${product.palletType}', ProcessedType: '${currentPalletType}', CapacityAdded: ${capacityToAdd}`); 
+                });
+
+                const totalCapacity = 2; 
+                const originalCalculated = calculatedUsedCapacity;
+                calculatedUsedCapacity = Math.min(calculatedUsedCapacity, totalCapacity);
+                const calculatedAvailableCapacity = totalCapacity - calculatedUsedCapacity;
+                const calculatedIsOccupied = calculatedUsedCapacity > 0;
+                
+                // Hesaplama sonucu log
+                console.log(`[CapacityCalc] Cell ID: ${plainCell.id} - Total Calc Before Limit: ${originalCalculated}, Final Used: ${calculatedUsedCapacity}, Available: ${calculatedAvailableCapacity}, isOccupied: ${calculatedIsOccupied}`);
+
+                // Sonuç objesini oluştur
+                return {
+                    ...plainCell, 
+                    totalCapacity: totalCapacity,
+                    usedCapacity: calculatedUsedCapacity,       
+                    availableCapacity: calculatedAvailableCapacity, 
+                    isOccupied: calculatedIsOccupied,         
+                    pallets: products.map(p => ({ 
+                        id: p.id,
+                        productId: p.id,
+                        product: p
+                    }))
+                };
             });
+
+            res.json({ success: true, data: formattedCells });
         } catch (error) {
             console.error('Get rack cells error:', error);
+             logger.error('Error fetching rack cells', { 
+                 error: error.message,
+                 rackNumber: req.params.rackNumber,
+                 userId: req.user?.id
+             });
             res.status(500).json({
                 success: false,
                 message: 'Raf hücreleri yüklenirken bir hata oluştu'

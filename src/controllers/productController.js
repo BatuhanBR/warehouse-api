@@ -11,8 +11,9 @@ const PRODUCT_ATTRIBUTES = [
     'quantity', 'price', 'minStockLevel', 'maxStockLevel',
     'categoryId', 'locationId', 'createdBy',
     'storageStartDate', 'expectedStorageDuration',
-    'company', 'weight', 'sizeCategory',
-    'width', 'height', 'length', 'dailyStorageRate',
+    'company', 'weight', 
+    'palletType', 'weightCategory',
+    'dailyStorageRate',
     'createdAt', 'updatedAt'
 ];
 
@@ -182,6 +183,7 @@ const productController = {
     },
 
     updateProduct: async (req, res) => {
+        console.log('Received Body:', req.body);
         const transaction = await sequelize.transaction();
         
         try {
@@ -253,83 +255,78 @@ const productController = {
             if (req.body.dailyStorageRate !== undefined) updateData.dailyStorageRate = parseFloat(req.body.dailyStorageRate);
             if (req.body.sizeCategory !== undefined) updateData.sizeCategory = req.body.sizeCategory;
 
-            // Güncellenecek veri yoksa hata ver
+            // Eksik olan palletType kontrolünü ekleyelim
+            if (req.body.palletType !== undefined) {
+                // Gelen değerin 'half' veya 'full' olduğundan emin olalım (opsiyonel)
+                const palletType = req.body.palletType.trim().toLowerCase();
+                if (palletType === 'half' || palletType === 'full') {
+                    updateData.palletType = palletType;
+                } else {
+                    // Geçersiz palet tipi gelirse hata verebilir veya loglayabiliriz
+                    logger.warn(`Invalid palletType received for product update (ID: ${id}): ${req.body.palletType}`);
+                    // Hata vermek istiyorsak:
+                    // await transaction.rollback();
+                    // return res.status(400).json({ success: false, message: 'Geçersiz palet tipi' });
+                }
+            }
+
+            if (req.body.weightCategory !== undefined) updateData.weightCategory = req.body.weightCategory;
+            if (req.body.storageStartDate !== undefined) updateData.storageStartDate = req.body.storageStartDate;
+            if (req.body.expectedStorageDuration !== undefined) updateData.expectedStorageDuration = parseInt(req.body.expectedStorageDuration);
+
+            // Güncellenecek veri varsa işlemi yap
             if (Object.keys(updateData).length === 0) {
                 await transaction.rollback();
-                return res.status(400).json({
-                    success: false,
-                    message: 'Güncellenecek veri bulunamadı'
-                });
+                return res.status(400).json({ success: false, message: "Güncellenecek veri bulunamadı" });
             }
             
-            // Direkt SQL UPDATE sorgusu kullan
-            await Product.update(updateData, {
-                where: { id: id },
-                transaction
-            });
-
-            // Stok değişimi varsa stok hareketi oluştur
-            const stockChanged = updateData.quantity !== undefined && previousStock !== newStock;
-            if (stockChanged) {
-                const stockDifference = newStock - previousStock;
-                const movementType = stockDifference > 0 ? 'IN' : 'OUT';
-                const quantityChanged = Math.abs(stockDifference);
-                
-                await StockMovement.create({
-                    type: movementType,
-                    quantity: quantityChanged,
-                    description: `Ürün düzenlendi - ${product.name}`,
-                    previousStock: previousStock,
-                    newStock: newStock,
-                    productId: id,
-                    // Lokasyon güncellendiyse yenisini, değilse eskisini kullan
-                    locationId: updateData.locationId !== undefined ? updateData.locationId : product.locationId, 
-                    createdBy: req.user.id
-                }, { transaction });
-                
-                console.log('Ürün düzenleme - Stok hareketi oluşturuldu:', {
-                    type: movementType,
-                    quantity: quantityChanged,
-                    previousStock,
-                    newStock,
-                    productId: id
-                });
+            // Stok Değişikliği Kontrolü ve Hareketi
+            let quantityChange = 0;
+            if (updateData.quantity !== undefined) {
+                quantityChange = updateData.quantity - previousStock;
             }
 
+            console.log('Update Data Object:', updateData);
+            // Ürünü güncelle
+            await product.update(updateData, { transaction });
+
+            // Stok hareketi kaydı (eğer stok değiştiyse)
+            if (quantityChange !== 0) {
+                await StockMovement.create({
+                    type: quantityChange > 0 ? 'IN' : 'OUT',
+                    quantity: Math.abs(quantityChange),
+                    description: 'Ürün güncelleme ile stok değişimi',
+                    productId: product.id,
+                    locationId: product.locationId, // Ürünün güncel lokasyonu
+                    previousStock: previousStock,
+                    newStock: updateData.quantity,
+                    createdBy: req.user.id
+                }, { transaction });
+            }
+
+            // Transaction'ı commit et
             await transaction.commit();
 
-            // Güncellenmiş ürünü getir
-            const updatedProduct = await Product.findByPk(id, {
-                include: [
-                    {
-                        model: Category,
-                        as: 'Category',
-                        attributes: ['id', 'name']
-                    },
-                    {
-                        model: Location,
-                        as: 'Location',
-                        attributes: ['id', 'code', 'rackNumber', 'level', 'position']
-                    }
-                ]
-            });
-
+            // Başarı mesajı döndür, güncellenmiş veriyi tekrar çekme
             res.json({
                 success: true,
-                message: 'Ürün başarıyla güncellendi',
-                data: updatedProduct
+                message: 'Ürün başarıyla güncellendi'
             });
 
         } catch (error) {
+            // Hata durumunda rollback yapmayı dene (eğer commit edilmediyse)
+            if (transaction && !transaction.finished) { // Kontrol ekleyelim
+              try {
             await transaction.rollback();
-            console.error('Update product error:', error);
-             // Daha spesifik hata mesajları verelim
-            if (error.name === 'SequelizeValidationError') {
-                 return res.status(400).json({ success: false, message: 'Doğrulama hatası: ' + error.errors.map(e => e.message).join(', ') });
+              } catch (rollbackError) {
+                  console.error('Rollback error:', rollbackError);
+              }
             }
+            console.error('Update product error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Ürün güncellenirken bir hata oluştu'
+                message: 'Ürün güncellenirken bir hata oluştu',
+                error: error.message
             });
         }
     },

@@ -19,6 +19,7 @@ const app = express();
 const corsOptions = {
   origin: '*', // veya spesifik origin: 'http://localhost:3001'
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  allowedHeaders: ['Content-Type', 'Authorization'],
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
@@ -76,6 +77,7 @@ const warehouseRoutes = require('./src/routes/warehouseRoutes');
 const shelfRoutes = require('./src/routes/shelfRoutes');
 const expenseRoutes = require('./src/routes/expenseRoutes');
 const contactRoutes = require('./src/routes/contactRoutes');
+const dssRoutes = require('./src/routes/dssRoutes');
 console.log('All routes loaded');
 
 // Ana route
@@ -102,6 +104,7 @@ app.use('/api/warehouse', warehouseRoutes);
 app.use('/api/shelves', shelfRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/dss', dssRoutes);
 
 console.log('All API routes registered');
 

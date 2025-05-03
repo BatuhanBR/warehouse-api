@@ -162,6 +162,17 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     company: DataTypes.STRING,
+    palletType: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: 'full',
+      comment: 'Palet tipi (half/full)'
+    },
+    weightCategory: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Ağırlık kategorisi (örn: Hafif, Orta, Ağır)'
+    }
   }, {
     sequelize,
     modelName: 'Product',

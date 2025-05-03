@@ -112,11 +112,29 @@ module.exports = {
 
           const width = getRandomDimension(sizeRanges.width);
           const height = getRandomDimension(sizeRanges.height);
-          const length = getRandomDimension(sizeRanges.length);
+          // const length = getRandomDimension(sizeRanges.length); // Eski boyut hesaplama
 
-          const weight = size === 'Küçük' ? Math.random() * 5 : 
-                        size === 'Normal' ? Math.random() * 20 + 5 : 
-                        Math.random() * 50 + 20;
+          // Yeni: Palet tipini belirle (rastgele yarı yarıya)
+          const palletType = Math.random() < 0.5 ? 'half' : 'full';
+
+          // Yeni: Ağırlık Hesaplama (Palet tipine göre)
+          let weight = 0;
+          if (palletType === 'half') {
+            // Yarım palet: 50kg - 600kg arası
+            weight = Math.random() * (600 - 50) + 50;
+          } else {
+            // Tam palet: 150kg - 1200kg arası
+            weight = Math.random() * (1200 - 150) + 150;
+          }
+          const parsedWeight = Number(weight.toFixed(2)); // Ağırlığı sayıya çevir ve formatla
+
+          // Yeni: Ağırlık kategorisini belirle (güncel ağırlığa göre)
+          let weightCategory = 'Hafif';
+          if (parsedWeight > 750) {
+              weightCategory = 'Ağır';
+          } else if (parsedWeight >= 250) {
+              weightCategory = 'Normal';
+          } // 50-250kg zaten Hafif
           
           const quantity = Math.floor(Math.random() * 50) + 1;
           const company = companies[Math.floor(Math.random() * companies.length)];
@@ -136,19 +154,27 @@ module.exports = {
           // Kategori için günlük depolama ücretini al
           const dailyStorageRate = categoryStorageRates[category.name] || 50;
 
+          // Yeni: SKU Oluşturma (XX-YYYYY formatı)
+          const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+          const randomLetters = letters[Math.floor(Math.random() * letters.length)] + 
+                                letters[Math.floor(Math.random() * letters.length)];
+          const randomAlphanumeric = Math.random().toString(36).substring(2, 7).toUpperCase();
+          const sku = `${randomLetters}-${randomAlphanumeric}`;
+
+
         products.push({
             name: `${company} Ürün ${i + 1}`,
-            sku: `${category.id}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-            description: `${size} boyutlu ${company} ürünü - ${durationType} süreli depolama`,
+            // sku: `${category.id}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`, // Eski SKU
+            sku: sku, // Yeni SKU formatı
+            description: `${size} boyutlu ${company} ürünü - ${durationType} süreli depolama`, // Açıklamayı güncelleyebiliriz?
             quantity,
             price,
             dailyStorageRate,
             minStockLevel: Math.max(5, Math.floor(quantity * 0.2)),
             maxStockLevel: Math.floor(quantity * 2),
-            weight: Number(weight.toFixed(2)),
-            width,
-            height,
-            length,
+            weight: parsedWeight, // Hesaplanan ağırlık
+            palletType: palletType, // Eklendi
+            weightCategory: weightCategory, // Eklendi
           categoryId: category.id,
             locationId: null,
             company,

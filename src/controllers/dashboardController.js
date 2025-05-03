@@ -654,56 +654,65 @@ const dashboardController = {
     getWarehouseOccupancy: async (req, res) => {
         try {
             const TOTAL_WAREHOUSE_AREA = 153.6; // Toplam depo alanı (m²)
+            const TOTAL_CELLS = 160; // Toplam hücre sayısı
+            const CAPACITY_PER_CELL = 2; // Hücre başına palet/ürün kapasitesi
+            const TOTAL_PALLET_CAPACITY = TOTAL_CELLS * CAPACITY_PER_CELL;
 
-            // Tüm ürünlerin kapladığı toplam alanı hesapla
-            const products = await Product.findAll({
-                attributes: [
-                    'quantity',
-                    'width',
-                    'length'
-                ],
-                where: {
-                    width: { [Op.gt]: 0 },
-                    length: { [Op.gt]: 0 }
-                },
-                raw: true
+            // Tüm lokasyonları ve içlerindeki ilişkili ürünleri (paletleri temsil ediyor varsayımıyla) çek
+            const locations = await Location.findAll({
+                include: [{
+                    model: Product, // Product modelini include et
+                    as: 'products', // İlişki adı: 'products'
+                    attributes: ['id', 'quantity'] // Ürün miktarını alalım
+                }],
+                attributes: ['id'] 
             });
 
-            // Her ürün için alan hesapla ve topla
-            let totalOccupiedArea = 0;
+            let totalPallets = 0; // Aslında lokasyondaki ürün sayısı
             let totalQuantity = 0;
 
-            for (const product of products) {
-                const width = Math.abs(parseFloat(product.width || 0)) / 100; // cm to m
-                const length = Math.abs(parseFloat(product.length || 0)) / 100; // cm to m
-                const quantity = parseInt(product.quantity || 0);
-
-                if (width && length) {
-                    const areaPerUnit = width * length; // m² olarak alan
-                    // Her ürün için sadece bir adet alan hesapla
-                    totalOccupiedArea += areaPerUnit;
-                    totalQuantity += quantity;
+            // Toplam palet/ürün sayısını ve toplam ürün miktarını hesapla
+            for (const location of locations) {
+                const palletCountInLocation = location.products?.length ?? 0; // products dizisinin uzunluğu
+                totalPallets += palletCountInLocation;
+                
+                // Ürünlerin quantity alanını topla
+                if (location.products) {
+                    for (const product of location.products) {
+                        totalQuantity += product.quantity ?? 0; // Product modelinde quantity alanı varsa
+                    }
                 }
             }
 
-            // Değerleri kontrol et ve sınırla
-            const validOccupiedArea = Math.min(totalOccupiedArea, TOTAL_WAREHOUSE_AREA);
-            const availableArea = Math.max(0, TOTAL_WAREHOUSE_AREA - validOccupiedArea);
-            const occupancyRate = Math.min(100, (validOccupiedArea / TOTAL_WAREHOUSE_AREA) * 100);
+            // Doluluk oranını hesapla
+            const occupancyRate = TOTAL_PALLET_CAPACITY > 0 
+                ? Math.min(100, (totalPallets / TOTAL_PALLET_CAPACITY) * 100)
+                : 0;
+
+            // İşgal edilen alanı oransal olarak hesapla (yaklaşık)
+            const occupiedArea = TOTAL_PALLET_CAPACITY > 0
+                ? (totalPallets / TOTAL_PALLET_CAPACITY) * TOTAL_WAREHOUSE_AREA
+                : 0;
+            const availableArea = Math.max(0, TOTAL_WAREHOUSE_AREA - occupiedArea);
 
             res.json({
                 success: true,
                 data: {
                     totalArea: TOTAL_WAREHOUSE_AREA,
-                    occupiedArea: parseFloat(validOccupiedArea.toFixed(2)),
+                    occupiedArea: parseFloat(occupiedArea.toFixed(2)),
                     availableArea: parseFloat(availableArea.toFixed(2)),
                     occupancyRate: parseFloat(occupancyRate.toFixed(2)),
-                    totalProducts: products.length,
-                    totalQuantity: totalQuantity
+                    totalProducts: totalPallets, // Lokasyonlardaki toplam ürün sayısı (paletleri temsil ediyor)
+                    totalQuantity: totalQuantity // Toplam ürün adedi (ürünlerden)
                 }
             });
         } catch (error) {
             console.error('Warehouse occupancy error:', error);
+            logger.error('Error calculating warehouse occupancy:', { 
+                message: error.message, 
+                stack: error.stack,
+                ...(error.original && { originalError: error.original })
+            });
             res.status(500).json({
                 success: false,
                 message: 'Depo doluluk oranı hesaplanırken bir hata oluştu'
